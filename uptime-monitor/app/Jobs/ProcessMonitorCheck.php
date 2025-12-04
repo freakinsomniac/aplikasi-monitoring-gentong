@@ -1,0 +1,879 @@
+<?php
+
+namespace App\Jobs;
+
+use App\Models\Monitor;
+use App\Models\MonitorCheck;
+use App\Models\Incident;
+use App\Models\MonitoringLog;
+use App\Jobs\SendNotification;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
+use Exception;
+use Throwable;
+
+class ProcessMonitorCheck implements ShouldQueue
+{
+    use Queueable;
+
+    protected Monitor $monitor;
+
+    /**
+     * Create a new job instance.
+     */
+    public function __construct(Monitor $monitor)
+    {
+        $this->monitor = $monitor;
+    }
+
+    /**
+     * Handle a job failure.
+     */
+    public function failed(?Throwable $exception): void
+    {
+        // Log the failure
+        if ($exception instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
+            Log::warning("Monitor job failed - Monitor not found", [
+                'exception' => $exception->getMessage(),
+                'job_class' => static::class
+            ]);
+        } else {
+            Log::error("Monitor job failed", [
+                'exception' => $exception?->getMessage(),
+                'job_class' => static::class
+            ]);
+        }
+    }
+
+    /**
+     * Execute the job.
+     */
+    public function handle(): void
+    {
+        // Check if monitor still exists (in case it was deleted while job was queued)
+        $monitor = Monitor::find($this->monitor->id);
+        if (!$monitor) {
+            Log::warning("Monitor job skipped - Monitor not found", [
+                'monitor_id' => $this->monitor->id,
+                'job_class' => static::class
+            ]);
+            return;
+        }
+
+        // Update our monitor reference to the fresh instance
+        $this->monitor = $monitor;
+
+        // Log check start
+        MonitoringLog::logEvent(
+            $this->monitor->id,
+            'check_start',
+            null,
+            [
+                'monitor_type' => $this->monitor->type,
+                'monitor_url' => $this->monitor->target,
+                'worker_pid' => getmypid(),
+                'job_id' => $this->job->getJobId() ?? 'unknown'
+            ]
+        );
+
+        // Use PostgreSQL advisory lock to ensure only one worker processes this monitor
+        $lockKey = $this->monitor->id;
+        $lockAcquired = false;
+
+        try {
+            // Try to acquire advisory lock (non-blocking)
+            $lockResult = DB::select("SELECT pg_try_advisory_lock(?) as lock_acquired", [$lockKey]);
+            $lockAcquired = $lockResult[0]->lock_acquired ?? false;
+
+            if (!$lockAcquired) {
+                MonitoringLog::logEvent(
+                    $this->monitor->id,
+                    'check_skipped',
+                    null,
+                    ['reason' => 'already_being_processed_by_another_worker']
+                );
+                Log::info("Monitor check skipped - already being processed by another worker", [
+                    'monitor_id' => $this->monitor->id,
+                    'monitor_name' => $this->monitor->name
+                ]);
+                return;
+            }
+
+            // Skip if monitor is disabled or paused
+            if (!$this->monitor->enabled || $this->monitor->isPaused()) {
+                return;
+            }
+
+            // First time check or unknown status - perform validation
+            if ($this->monitor->last_status === null || $this->monitor->last_status === 'unknown') {
+                $validationResult = $this->validateService();
+                
+                if (!$validationResult['valid']) {
+                    $this->handleInvalidService($validationResult);
+                    return;
+                }
+                
+                // Service is valid, proceed with normal monitoring
+                $this->monitor->update(['last_status' => 'validating']);
+                
+                MonitoringLog::logEvent(
+                    $this->monitor->id,
+                    'service_validated',
+                    'validating',
+                    [
+                        'validation_result' => $validationResult,
+                        'message' => 'Service validated successfully, starting monitoring'
+                    ]
+                );
+            }
+
+            $startTime = microtime(true);
+            $status = 'unknown';
+            $latency = null;
+            $httpStatus = null;
+            $errorMessage = null;
+            $responseSize = null;
+            $meta = [];
+
+            try {
+                switch ($this->monitor->type) {
+                    case 'http':
+                    case 'https':
+                        $result = $this->checkHttp();
+                        break;
+                    case 'tcp':
+                        $result = $this->checkTcp();
+                        break;
+                    case 'ping':
+                        $result = $this->checkPing();
+                        break;
+                    case 'keyword':
+                        $result = $this->checkKeyword();
+                        break;
+                    default:
+                        throw new Exception("Unsupported monitor type: {$this->monitor->type}");
+                }
+
+                $status = $result['status'];
+                $latency = $result['latency'];
+                $httpStatus = $result['http_status'] ?? null;
+                $responseSize = $result['response_size'] ?? null;
+                $meta = $result['meta'] ?? [];
+
+            } catch (Exception $e) {
+                $status = 'down';
+                $errorMessage = $e->getMessage();
+                $latency = (microtime(true) - $startTime) * 1000;
+                
+                // Log check failure
+                MonitoringLog::logEvent(
+                    $this->monitor->id,
+                    'check_failed',
+                    'down',
+                    [
+                        'error' => $errorMessage,
+                        'exception_type' => get_class($e),
+                        'execution_time_ms' => $latency
+                    ],
+                    $latency,
+                    $errorMessage
+                );
+            }
+
+            // Create monitor check record
+            $check = MonitorCheck::create([
+                'monitor_id' => $this->monitor->id,
+                'checked_at' => now(),
+                'status' => $status,
+                'latency_ms' => $latency ? round($latency) : null,
+                'http_status' => $httpStatus,
+                'error_message' => $errorMessage,
+                'response_size' => $responseSize,
+                'region' => 'local', // Can be expanded for multiple regions
+                'meta' => $meta,
+            ]);
+
+            // Log successful check completion
+            MonitoringLog::logEvent(
+                $this->monitor->id,
+                'check_complete',
+                $status,
+                [
+                    'check_id' => $check->id,
+                    'http_status' => $httpStatus,
+                    'response_size' => $responseSize,
+                    'meta' => $meta,
+                    'execution_time_ms' => $latency
+                ],
+                $latency,
+                $errorMessage
+            );
+
+            // Update monitor status and consecutive failures
+            $previousStatus = $this->monitor->last_status;
+            $consecutiveFailures = $status === 'down' ? 
+                ($previousStatus === 'down' ? $this->monitor->consecutive_failures + 1 : 1) : 0;
+
+            $this->monitor->update([
+                'last_status' => $status,
+                'last_checked_at' => now(),
+                'next_check_at' => now()->addSeconds($this->monitor->interval_seconds),
+                'consecutive_failures' => $consecutiveFailures,
+                'error_message' => $status === 'down' ? $errorMessage : null,
+                'last_error_at' => $status === 'down' ? now() : null,
+            ]);
+
+            // Log status change if detected
+            if ($previousStatus !== $status) {
+                MonitoringLog::logEvent(
+                    $this->monitor->id,
+                    'status_change',
+                    $status,
+                    [
+                        'previous_status' => $previousStatus,
+                        'new_status' => $status,
+                        'consecutive_failures' => $consecutiveFailures,
+                        'check_id' => $check->id
+                    ]
+                );
+            }
+
+            // Handle incident management (FR-12, FR-13)
+            $this->handleIncidents($status, $previousStatus);
+
+            // Log the check
+            Log::info("Monitor check completed", [
+                'monitor_id' => $this->monitor->id,
+                'monitor_name' => $this->monitor->name,
+                'status' => $status,
+                'latency' => $latency,
+                'status_changed' => $previousStatus !== $status,
+            ]);
+
+        } finally {
+            // Always release the advisory lock
+            if ($lockAcquired) {
+                DB::select("SELECT pg_advisory_unlock(?)", [$lockKey]);
+            }
+        }
+    }
+
+    protected function checkHttp(): array
+    {
+        $startTime = microtime(true);
+        $config = $this->monitor->config ?? [];
+        
+        $httpClient = Http::timeout($this->monitor->timeout_ms / 1000)
+            ->retry($this->monitor->retries, 1000);
+
+        // Add custom headers if configured
+        if (isset($config['headers'])) {
+            $httpClient = $httpClient->withHeaders($config['headers']);
+        }
+
+        // Add basic auth if configured
+        if (isset($config['auth']) && $config['auth']['type'] === 'basic') {
+            $httpClient = $httpClient->withBasicAuth(
+                $config['auth']['username'],
+                $config['auth']['password']
+            );
+        }
+
+        // Handle SSL verification setting - default to not verify for flexibility
+        $verifySSL = isset($config['verify_ssl']) ? $config['verify_ssl'] : false;
+        if (!$verifySSL) {
+            $httpClient = $httpClient->withoutVerifying();
+        }
+
+        $response = $httpClient->get($this->monitor->target);
+        $latency = (microtime(true) - $startTime) * 1000;
+
+        $status = 'up';
+        $meta = [
+            'response_headers' => array_slice($response->headers(), 0, 10), // Limit headers
+        ];
+
+        // Check expected status code
+        if (isset($config['expected_status_code'])) {
+            if ($response->status() !== $config['expected_status_code']) {
+                $status = 'down';
+            }
+        } else {
+            // Default: consider 2xx and 3xx as up
+            if ($response->status() >= 400) {
+                $status = 'down';
+            }
+        }
+
+        // Check for expected content
+        if (isset($config['expected_content']) && $status === 'up') {
+            $body = $response->body();
+            if (!str_contains($body, $config['expected_content'])) {
+                $status = 'down';
+            }
+            $meta['body_snippet'] = substr($body, 0, 500);
+        }
+
+        // Check SSL certificate expiry for HTTPS
+        if ($this->monitor->type === 'https') {
+            $meta['ssl_expiry'] = $this->getSSLExpiryDate($this->monitor->target);
+        }
+
+        return [
+            'status' => $status,
+            'latency' => $latency,
+            'http_status' => $response->status(),
+            'response_size' => strlen($response->body()),
+            'meta' => $meta,
+        ];
+    }
+
+    protected function checkTcp(): array
+    {
+        $startTime = microtime(true);
+        $config = $this->monitor->config ?? [];
+        
+        $target = $this->monitor->target;
+        $parts = explode(':', $target);
+        $host = $parts[0];
+        $port = isset($parts[1]) ? (int) $parts[1] : 80;
+
+        $socket = @fsockopen($host, $port, $errno, $errstr, $this->monitor->timeout_ms / 1000);
+        $latency = (microtime(true) - $startTime) * 1000;
+
+        if ($socket) {
+            fclose($socket);
+            $status = 'up';
+        } else {
+            $status = 'down';
+            throw new Exception("TCP connection failed: $errstr ($errno)");
+        }
+
+        return [
+            'status' => $status,
+            'latency' => $latency,
+            'meta' => [
+                'host' => $host,
+                'port' => $port,
+            ],
+        ];
+    }
+
+    protected function checkPing(): array
+    {
+        $startTime = microtime(true);
+        $host = $this->monitor->target;
+        
+        // Use system ping command
+        $output = [];
+        $returnCode = 0;
+        
+        if (PHP_OS_FAMILY === 'Windows') {
+            exec("ping -n 1 -w " . $this->monitor->timeout_ms . " $host", $output, $returnCode);
+        } else {
+            exec("ping -c 1 -W " . ($this->monitor->timeout_ms / 1000) . " $host", $output, $returnCode);
+        }
+        
+        $latency = (microtime(true) - $startTime) * 1000;
+        $status = ($returnCode === 0) ? 'up' : 'down';
+
+        if ($status === 'down') {
+            throw new Exception("Ping failed for host: $host");
+        }
+
+        // Extract latency from ping output if available
+        $pingLatency = $this->extractPingLatency(implode("\n", $output));
+
+        return [
+            'status' => $status,
+            'latency' => $pingLatency ?? $latency,
+            'meta' => [
+                'host' => $host,
+                'ping_output' => implode("\n", array_slice($output, 0, 3)),
+            ],
+        ];
+    }
+
+    protected function checkKeyword(): array
+    {
+        $config = $this->monitor->config ?? [];
+        $keyword = $config['keyword'] ?? '';
+
+        if (empty($keyword)) {
+            throw new Exception("Keyword not configured for monitor");
+        }
+
+        // First perform HTTP check
+        $httpResult = $this->checkHttp();
+        
+        // Then check for keyword
+        if ($httpResult['status'] === 'up') {
+            $response = Http::timeout($this->monitor->timeout_ms / 1000)
+                ->get($this->monitor->target);
+                
+            $body = $response->body();
+            
+            if (!str_contains($body, $keyword)) {
+                $httpResult['status'] = 'down';
+                $httpResult['meta']['keyword_found'] = false;
+            } else {
+                $httpResult['meta']['keyword_found'] = true;
+            }
+        }
+
+        return $httpResult;
+    }
+
+    protected function handleIncidents(string $currentStatus, string $previousStatus): void
+    {
+        // Only create/resolve incidents when status actually changes (FR-11)
+        if ($currentStatus === $previousStatus) {
+            return;
+        }
+
+        $lastIncident = $this->monitor->incidents()
+            ->where('resolved', false)
+            ->latest('started_at')
+            ->first();
+
+        if ($currentStatus === 'down' && $previousStatus !== 'down') {
+            // Start new incident when going from UP/UNKNOWN to DOWN (FR-12)
+            if (!$lastIncident) {
+                $incident = Incident::create([
+                    'monitor_id' => $this->monitor->id,
+                    'started_at' => now(),
+                    'resolved' => false,
+                    'description' => "Monitor went down from status: {$previousStatus}",
+                ]);
+
+                Log::info("New incident created", [
+                    'monitor_id' => $this->monitor->id,
+                    'incident_id' => $incident->id,
+                    'previous_status' => $previousStatus,
+                    'current_status' => $currentStatus,
+                ]);
+
+                // Send notification only if consecutive failures meet threshold (FR-16: Anti-spam)
+                if ($this->monitor->consecutive_failures >= $this->monitor->notify_after_retries) {
+                    SendNotification::dispatch($this->monitor, 'down', $incident);
+                }
+            }
+        } else if ($currentStatus === 'up' && $previousStatus === 'down' && $lastIncident) {
+            // Resolve existing incident when going from DOWN to UP (FR-13)
+            $duration = now()->diffInSeconds($lastIncident->started_at);
+            
+            $lastIncident->update([
+                'ended_at' => now(),
+                'resolved' => true,
+                'description' => ($lastIncident->description ?? '') . " | Resolved after {$duration} seconds",
+            ]);
+
+            Log::info("Incident resolved", [
+                'monitor_id' => $this->monitor->id,
+                'incident_id' => $lastIncident->id,
+                'duration_seconds' => $duration,
+                'previous_status' => $previousStatus,
+                'current_status' => $currentStatus,
+            ]);
+
+            // Send recovery notification (FR-14)
+            SendNotification::dispatch($this->monitor, 'up', $lastIncident);
+        }
+    }
+
+    protected function getSSLExpiryDate(string $url): ?string
+    {
+        try {
+            $parsedUrl = parse_url($url);
+            $host = $parsedUrl['host'];
+            $port = $parsedUrl['port'] ?? 443;
+
+            $context = stream_context_create([
+                'ssl' => [
+                    'verify_peer' => false,
+                    'verify_peer_name' => false,
+                    'capture_peer_cert' => true,
+                ]
+            ]);
+
+            $socket = @stream_socket_client(
+                "ssl://$host:$port",
+                $errno,
+                $errstr,
+                $this->monitor->timeout_ms / 1000,
+                STREAM_CLIENT_CONNECT,
+                $context
+            );
+
+            if ($socket) {
+                $cert = stream_context_get_params($socket)['options']['ssl']['peer_certificate'];
+                $certInfo = openssl_x509_parse($cert);
+                fclose($socket);
+
+                return date('Y-m-d H:i:s', $certInfo['validTo_time_t']);
+            }
+        } catch (Exception $e) {
+            Log::warning("Failed to get SSL expiry date for $url: " . $e->getMessage());
+        }
+
+        return null;
+    }
+
+    protected function extractPingLatency(string $pingOutput): ?float
+    {
+        // Extract latency from ping output (works for both Windows and Linux)
+        if (preg_match('/time[=<](\d+(?:\.\d+)?)ms/i', $pingOutput, $matches)) {
+            return (float) $matches[1];
+        }
+
+        return null;
+    }
+
+    /**
+     * Validate if the service/target is valid and reachable
+     */
+    private function validateService(): array
+    {
+        MonitoringLog::logEvent(
+            $this->monitor->id,
+            'validation_start',
+            'unknown',
+            [
+                'target' => $this->monitor->target,
+                'type' => $this->monitor->type
+            ]
+        );
+
+        try {
+            switch ($this->monitor->type) {
+                case 'http':
+                case 'https':
+                    return $this->validateHttpService();
+                case 'tcp':
+                    return $this->validateTcpService();
+                case 'ping':
+                    return $this->validatePingService();
+                case 'keyword':
+                    return $this->validateKeywordService();
+                default:
+                    return [
+                        'valid' => false,
+                        'reason' => 'Unsupported monitor type: ' . $this->monitor->type,
+                        'error_code' => 'UNSUPPORTED_TYPE'
+                    ];
+            }
+        } catch (Exception $e) {
+            return [
+                'valid' => false,
+                'reason' => 'Validation failed: ' . $e->getMessage(),
+                'error_code' => 'VALIDATION_EXCEPTION',
+                'exception' => get_class($e)
+            ];
+        }
+    }
+
+    /**
+     * Validate HTTP/HTTPS service
+     */
+    private function validateHttpService(): array
+    {
+        $url = $this->monitor->target;
+        
+        // Check if URL is properly formatted
+        if (!filter_var($url, FILTER_VALIDATE_URL)) {
+            return [
+                'valid' => false,
+                'reason' => 'Invalid URL format: ' . $url,
+                'error_code' => 'INVALID_URL'
+            ];
+        }
+
+        // Parse URL to check components
+        $parsed = parse_url($url);
+        if (!isset($parsed['scheme']) || !in_array($parsed['scheme'], ['http', 'https'])) {
+            return [
+                'valid' => false,
+                'reason' => 'URL must use HTTP or HTTPS scheme',
+                'error_code' => 'INVALID_SCHEME'
+            ];
+        }
+
+        if (!isset($parsed['host']) || empty($parsed['host'])) {
+            return [
+                'valid' => false,
+                'reason' => 'URL must contain a valid host',
+                'error_code' => 'INVALID_HOST'
+            ];
+        }
+
+        // Check if host is resolvable
+        $ip = gethostbyname($parsed['host']);
+        if ($ip === $parsed['host'] && !filter_var($ip, FILTER_VALIDATE_IP)) {
+            return [
+                'valid' => false,
+                'reason' => 'Host is not resolvable: ' . $parsed['host'],
+                'error_code' => 'HOST_NOT_RESOLVABLE'
+            ];
+        }
+
+        // Perform basic HTTP validation request
+        try {
+            $config = $this->monitor->config ?? [];
+            $timeout = $config['timeout'] ?? 30;
+            $verifySSL = $config['verify_ssl'] ?? false;
+            
+            $httpClient = Http::timeout($timeout)
+                ->retry(1, 1000)
+                ->connectTimeout(10);
+                
+            if (!$verifySSL) {
+                $httpClient = $httpClient->withoutVerifying();
+            }
+            
+            // Use HEAD request for validation to minimize bandwidth
+            $response = $httpClient->head($url);
+            
+            // Accept any HTTP response (even errors) as valid - the service exists
+            return [
+                'valid' => true,
+                'reason' => 'Service responds to HTTP requests',
+                'http_status' => $response->status(),
+                'resolved_ip' => $ip,
+                'validation_method' => 'HEAD_REQUEST'
+            ];
+            
+        } catch (Exception $e) {
+            // If HEAD fails, try a simple GET with minimal timeout
+            try {
+                $response = $httpClient->timeout(5)->get($url);
+                return [
+                    'valid' => true,
+                    'reason' => 'Service responds to HTTP requests (fallback GET)',
+                    'http_status' => $response->status(),
+                    'resolved_ip' => $ip,
+                    'validation_method' => 'GET_FALLBACK'
+                ];
+            } catch (Exception $fallbackError) {
+                return [
+                    'valid' => false,
+                    'reason' => 'Service is not reachable: ' . $e->getMessage(),
+                    'error_code' => 'SERVICE_UNREACHABLE',
+                    'resolved_ip' => $ip,
+                    'original_error' => $e->getMessage(),
+                    'fallback_error' => $fallbackError->getMessage()
+                ];
+            }
+        }
+    }
+
+    /**
+     * Validate TCP service
+     */
+    private function validateTcpService(): array
+    {
+        $target = $this->monitor->target;
+        $config = $this->monitor->config ?? [];
+        $timeout = $config['timeout'] ?? 30;
+        
+        // Parse target (host:port)
+        if (!str_contains($target, ':')) {
+            return [
+                'valid' => false,
+                'reason' => 'TCP target must include port (host:port format)',
+                'error_code' => 'INVALID_TCP_FORMAT'
+            ];
+        }
+        
+        [$host, $port] = explode(':', $target, 2);
+        
+        if (!is_numeric($port) || $port < 1 || $port > 65535) {
+            return [
+                'valid' => false,
+                'reason' => 'Invalid port number: ' . $port,
+                'error_code' => 'INVALID_PORT'
+            ];
+        }
+        
+        // Check if host is resolvable
+        $ip = gethostbyname($host);
+        if ($ip === $host && !filter_var($ip, FILTER_VALIDATE_IP)) {
+            return [
+                'valid' => false,
+                'reason' => 'Host is not resolvable: ' . $host,
+                'error_code' => 'HOST_NOT_RESOLVABLE'
+            ];
+        }
+        
+        // Test TCP connection
+        $socket = @fsockopen($host, (int)$port, $errno, $errstr, min($timeout, 10));
+        
+        if ($socket) {
+            fclose($socket);
+            return [
+                'valid' => true,
+                'reason' => 'TCP service is reachable',
+                'resolved_ip' => $ip,
+                'port' => $port
+            ];
+        } else {
+            return [
+                'valid' => false,
+                'reason' => "TCP connection failed: $errstr ($errno)",
+                'error_code' => 'TCP_CONNECTION_FAILED',
+                'resolved_ip' => $ip,
+                'port' => $port,
+                'errno' => $errno,
+                'errstr' => $errstr
+            ];
+        }
+    }
+
+    /**
+     * Validate PING service
+     */
+    private function validatePingService(): array
+    {
+        $host = $this->monitor->target;
+        
+        // Check if host is resolvable
+        $ip = gethostbyname($host);
+        if ($ip === $host && !filter_var($ip, FILTER_VALIDATE_IP)) {
+            return [
+                'valid' => false,
+                'reason' => 'Host is not resolvable: ' . $host,
+                'error_code' => 'HOST_NOT_RESOLVABLE'
+            ];
+        }
+        
+        // Perform basic ping validation
+        if (PHP_OS_FAMILY === 'Windows') {
+            $cmd = "ping -n 1 -w 5000 " . escapeshellarg($host);
+        } else {
+            $cmd = "ping -c 1 -W 5 " . escapeshellarg($host);
+        }
+        
+        $output = [];
+        $returnVar = 0;
+        exec($cmd . " 2>&1", $output, $returnVar);
+        
+        if ($returnVar === 0) {
+            return [
+                'valid' => true,
+                'reason' => 'Host responds to ping',
+                'resolved_ip' => $ip,
+                'ping_output' => implode("\n", array_slice($output, 0, 3)) // First 3 lines only
+            ];
+        } else {
+            return [
+                'valid' => false,
+                'reason' => 'Host does not respond to ping',
+                'error_code' => 'PING_FAILED',
+                'resolved_ip' => $ip,
+                'ping_output' => implode("\n", $output),
+                'return_code' => $returnVar
+            ];
+        }
+    }
+
+    /**
+     * Validate keyword monitoring service
+     */
+    private function validateKeywordService(): array
+    {
+        // For keyword monitoring, we need to validate the underlying HTTP service first
+        $httpValidation = $this->validateHttpService();
+        
+        if (!$httpValidation['valid']) {
+            return $httpValidation; // Return the HTTP validation result
+        }
+        
+        $config = $this->monitor->config ?? [];
+        $keyword = $config['keyword'] ?? '';
+        
+        if (empty($keyword)) {
+            return [
+                'valid' => false,
+                'reason' => 'Keyword is not configured for keyword monitoring',
+                'error_code' => 'MISSING_KEYWORD'
+            ];
+        }
+        
+        return [
+            'valid' => true,
+            'reason' => 'HTTP service is reachable and keyword is configured',
+            'keyword' => $keyword,
+            'http_validation' => $httpValidation
+        ];
+    }
+
+    /**
+     * Handle invalid service by updating monitor status and creating incident
+     */
+    private function handleInvalidService(array $validationResult): void
+    {
+        // Update monitor status to invalid
+        $this->monitor->update([
+            'last_status' => 'invalid',
+            'last_checked_at' => now(),
+            'last_error' => $validationResult['reason'],
+            'error_message' => $validationResult['reason'],
+            'last_error_at' => now(),
+        ]);
+        
+        // Create a monitor check record
+        MonitorCheck::create([
+            'monitor_id' => $this->monitor->id,
+            'checked_at' => now(),
+            'status' => 'invalid',
+            'latency_ms' => null,
+            'http_status' => null,
+            'error_message' => $validationResult['reason'],
+            'response_size' => null,
+            'region' => 'local',
+            'meta' => json_encode($validationResult)
+        ]);
+        
+        // Log the validation failure
+        MonitoringLog::logEvent(
+            $this->monitor->id,
+            'validation_failed',
+            'invalid',
+            array_merge($validationResult, [
+                'message' => 'Service validation failed, monitoring disabled until fixed'
+            ])
+        );
+        
+        // Create or update incident for invalid service
+        $existingIncident = Incident::where('monitor_id', $this->monitor->id)
+            ->where('status', 'open')
+            ->where('type', 'validation_failed')
+            ->first();
+            
+        if (!$existingIncident) {
+            $incident = Incident::create([
+                'monitor_id' => $this->monitor->id,
+                'type' => 'validation_failed',
+                'status' => 'open',
+                'started_at' => now(),
+                'title' => 'Service Validation Failed: ' . $this->monitor->name,
+                'description' => $validationResult['reason'],
+                'severity' => 'high',
+                'meta' => json_encode($validationResult)
+            ]);
+            
+            // Send notification about invalid service
+            if ($this->monitor->notification_enabled) {
+                SendNotification::dispatch(
+                    $this->monitor,
+                    'validation_failed',
+                    "Service validation failed for {$this->monitor->name}: {$validationResult['reason']}",
+                    $incident
+                );
+            }
+        }
+    }
+}

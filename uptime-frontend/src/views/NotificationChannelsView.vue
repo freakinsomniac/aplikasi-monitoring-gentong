@@ -1,0 +1,861 @@
+<template>
+  <div class="notification-channels">
+    <div class="page-header">
+      <h1>Notification Channels</h1>
+      <button @click="showCreateForm = true" class="btn btn-primary">
+        Add Channel
+      </button>
+    </div>
+
+    <!-- Create/Edit Form -->
+    <div v-if="showCreateForm || editingChannel" class="channel-form-container">
+      <form @submit.prevent="submitForm" class="channel-form">
+        <h2>{{ editingChannel ? 'Edit' : 'Add New' }} Notification Channel</h2>
+        
+        <div class="form-group">
+          <label for="name">Channel Name *</label>
+          <input
+            id="name"
+            v-model="form.name"
+            type="text"
+            placeholder="Enter channel name"
+            required
+            class="form-control"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="type">Channel Type *</label>
+          <select
+            id="type"
+            v-model="form.type"
+            required
+            class="form-control"
+            @change="onTypeChange"
+          >
+            <option value="telegram">Telegram</option>
+            <option value="discord">Discord</option>
+            <option value="slack">Slack</option>
+            <option value="webhook">Generic Webhook</option>
+          </select>
+        </div>
+
+        <!-- Telegram Configuration -->
+        <div v-if="form.type === 'telegram'" class="form-section">
+          <h3>Telegram Configuration</h3>
+          
+          <div class="form-group">
+            <label for="telegram_bot_token">Bot Token *</label>
+            <input
+              id="telegram_bot_token"
+              v-model="form.telegram_bot_token"
+              type="text"
+              placeholder="Bot token from @BotFather"
+              required
+              class="form-control"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="telegram_chat_id">Chat ID *</label>
+            <input
+              id="telegram_chat_id"
+              v-model="form.telegram_chat_id"
+              type="text"
+              placeholder="Chat ID (user ID or group ID)"
+              required
+              class="form-control"
+            />
+          </div>
+
+          <div class="telegram-help">
+            <h4>How to get Chat ID:</h4>
+            <ol>
+              <li>Start a chat with your bot</li>
+              <li>Send any message to the bot</li>
+              <li>Visit: https://api.telegram.org/bot{TOKEN}/getUpdates</li>
+              <li>Look for "chat":{"id": YOUR_CHAT_ID}</li>
+            </ol>
+          </div>
+        </div>
+
+        <!-- Discord Configuration -->
+        <div v-if="form.type === 'discord'" class="form-section">
+          <h3>Discord Configuration</h3>
+          
+          <div class="form-group">
+            <label for="discord_webhook_url">Webhook URL *</label>
+            <input
+              id="discord_webhook_url"
+              v-model="form.discord_webhook_url"
+              type="url"
+              placeholder="https://discord.com/api/webhooks/..."
+              required
+              class="form-control"
+            />
+          </div>
+
+          <div class="discord-help">
+            <h4>How to create Discord webhook:</h4>
+            <ol>
+              <li>Go to your Discord server settings</li>
+              <li>Navigate to Integrations > Webhooks</li>
+              <li>Create a new webhook</li>
+              <li>Copy the webhook URL</li>
+            </ol>
+          </div>
+        </div>
+
+        <!-- Slack Configuration -->
+        <div v-if="form.type === 'slack'" class="form-section">
+          <h3>Slack Configuration</h3>
+          
+          <div class="form-group">
+            <label for="slack_webhook_url">Webhook URL *</label>
+            <input
+              id="slack_webhook_url"
+              v-model="form.slack_webhook_url"
+              type="url"
+              placeholder="https://hooks.slack.com/services/..."
+              required
+              class="form-control"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="slack_channel">Channel (optional)</label>
+            <input
+              id="slack_channel"
+              v-model="form.slack_channel"
+              type="text"
+              placeholder="#general or @username"
+              class="form-control"
+            />
+          </div>
+
+          <div class="slack-help">
+            <h4>How to create Slack webhook:</h4>
+            <ol>
+              <li>Go to your Slack app settings</li>
+              <li>Create a new app or use existing one</li>
+              <li>Add Incoming Webhooks feature</li>
+              <li>Create webhook for your workspace</li>
+            </ol>
+          </div>
+        </div>
+
+        <!-- Webhook Configuration -->
+        <div v-if="form.type === 'webhook'" class="form-section">
+          <h3>Generic Webhook Configuration</h3>
+          
+          <div class="form-group">
+            <label for="webhook_url">Webhook URL *</label>
+            <input
+              id="webhook_url"
+              v-model="form.webhook_url"
+              type="url"
+              placeholder="https://your-webhook-endpoint.com/notify"
+              required
+              class="form-control"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="webhook_method">HTTP Method</label>
+            <select
+              id="webhook_method"
+              v-model="form.webhook_method"
+              class="form-control"
+            >
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="PATCH">PATCH</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="webhook_headers">Headers (JSON format)</label>
+            <textarea
+              id="webhook_headers"
+              v-model="form.webhook_headers"
+              class="form-control"
+              rows="3"
+              placeholder='{"Content-Type": "application/json", "Authorization": "Bearer token"}'
+            ></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="webhook_payload">Custom Payload Template (JSON)</label>
+            <textarea
+              id="webhook_payload"
+              v-model="form.webhook_payload"
+              class="form-control"
+              rows="5"
+              placeholder='{"message": "{{message}}", "status": "{{status}}", "monitor": "{{monitor_name}}"}'
+            ></textarea>
+            <small class="form-hint">
+              Available variables: {{message}}, {{status}}, {{monitor_name}}, {{timestamp}}
+            </small>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>
+            <input
+              type="checkbox"
+              v-model="form.is_enabled"
+            />
+            Enable this channel
+          </label>
+        </div>
+
+        <div class="form-actions">
+          <button
+            type="submit"
+            :disabled="submitting"
+            class="btn btn-primary"
+          >
+            {{ submitting ? 'Saving...' : (editingChannel ? 'Update Channel' : 'Create Channel') }}
+          </button>
+          
+          <button
+            type="button"
+            @click="cancelForm"
+            class="btn btn-secondary"
+          >
+            Cancel
+          </button>
+          
+          <button
+            v-if="editingChannel"
+            type="button"
+            @click="testChannel"
+            :disabled="testing"
+            class="btn btn-info"
+          >
+            {{ testing ? 'Testing...' : 'Test Channel' }}
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Channels List -->
+    <div v-if="loading" class="loading">Loading notification channels...</div>
+    
+    <div v-else-if="channels.length === 0 && !showCreateForm" class="no-channels">
+      <h2>No notification channels configured</h2>
+      <p>Create your first notification channel to receive alerts when your monitors go down.</p>
+      <button @click="showCreateForm = true" class="btn btn-primary btn-lg">
+        Create First Channel
+      </button>
+    </div>
+    
+    <div v-else-if="!showCreateForm && !editingChannel" class="channels-grid">
+      <div
+        v-for="channel in channels"
+        :key="channel.id"
+        class="channel-card"
+        :class="{ 'channel-disabled': !channel.is_enabled }"
+      >
+        <div class="channel-header">
+          <div class="channel-type-badge" :class="`type-${channel.type}`">
+            {{ channel.type.toUpperCase() }}
+          </div>
+          <div class="channel-status">
+            <span 
+              class="status-indicator"
+              :class="{ 'status-enabled': channel.is_enabled }"
+            ></span>
+          </div>
+        </div>
+        
+        <h3 class="channel-name">{{ channel.name }}</h3>
+        
+        <div class="channel-details">
+          <div v-if="channel.type === 'telegram'">
+            <strong>Bot Token:</strong> {{ maskToken(channel.telegram_bot_token) }}<br>
+            <strong>Chat ID:</strong> {{ channel.telegram_chat_id }}
+          </div>
+          
+          <div v-else-if="channel.type === 'discord'">
+            <strong>Webhook:</strong> {{ maskUrl(channel.discord_webhook_url) }}
+          </div>
+          
+          <div v-else-if="channel.type === 'slack'">
+            <strong>Webhook:</strong> {{ maskUrl(channel.slack_webhook_url) }}<br>
+            <span v-if="channel.slack_channel">
+              <strong>Channel:</strong> {{ channel.slack_channel }}
+            </span>
+          </div>
+          
+          <div v-else-if="channel.type === 'webhook'">
+            <strong>URL:</strong> {{ maskUrl(channel.webhook_url) }}<br>
+            <strong>Method:</strong> {{ channel.webhook_method || 'POST' }}
+          </div>
+        </div>
+        
+        <div class="channel-actions">
+          <button @click="editChannel(channel)" class="btn btn-primary btn-sm">
+            Edit
+          </button>
+          <button @click="testChannelById(channel.id)" class="btn btn-info btn-sm">
+            Test
+          </button>
+          <button @click="deleteChannel(channel.id)" class="btn btn-danger btn-sm">
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted } from 'vue'
+import api from '../services/api'
+
+const loading = ref(true)
+const channels = ref([])
+const showCreateForm = ref(false)
+const editingChannel = ref(null)
+const submitting = ref(false)
+const testing = ref(false)
+
+const form = ref({
+  name: '',
+  type: 'telegram',
+  is_enabled: true,
+  
+  // Telegram
+  telegram_bot_token: '',
+  telegram_chat_id: '',
+  
+  // Discord
+  discord_webhook_url: '',
+  
+  // Slack
+  slack_webhook_url: '',
+  slack_channel: '',
+  
+  // Generic webhook
+  webhook_url: '',
+  webhook_method: 'POST',
+  webhook_headers: '',
+  webhook_payload: ''
+})
+
+onMounted(() => {
+  fetchChannels()
+})
+
+async function fetchChannels() {
+  loading.value = true
+  
+  try {
+    const response = await api.notificationChannels.getAll()
+    if (response.data.success) {
+      channels.value = response.data.data.data || response.data.data
+    }
+  } catch (err) {
+    console.error('Failed to load notification channels:', err)
+    alert('Failed to load notification channels')
+  } finally {
+    loading.value = false
+  }
+}
+
+function onTypeChange() {
+  // Reset form fields when type changes
+  const type = form.value.type
+  Object.keys(form.value).forEach(key => {
+    if (key !== 'name' && key !== 'type' && key !== 'is_enabled') {
+      form.value[key] = ''
+    }
+  })
+  
+  if (type === 'webhook') {
+    form.value.webhook_method = 'POST'
+  }
+}
+
+function editChannel(channel) {
+  editingChannel.value = channel
+  showCreateForm.value = false
+  
+  // Populate form with channel data
+  Object.keys(form.value).forEach(key => {
+    if (channel[key] !== undefined) {
+      form.value[key] = channel[key]
+    }
+  })
+  
+  // Handle JSON fields
+  if (channel.webhook_headers) {
+    form.value.webhook_headers = typeof channel.webhook_headers === 'string'
+      ? channel.webhook_headers
+      : JSON.stringify(channel.webhook_headers, null, 2)
+  }
+  
+  if (channel.webhook_payload) {
+    form.value.webhook_payload = typeof channel.webhook_payload === 'string'
+      ? channel.webhook_payload
+      : JSON.stringify(channel.webhook_payload, null, 2)
+  }
+}
+
+function cancelForm() {
+  showCreateForm.value = false
+  editingChannel.value = null
+  resetForm()
+}
+
+function resetForm() {
+  form.value = {
+    name: '',
+    type: 'telegram',
+    is_enabled: true,
+    telegram_bot_token: '',
+    telegram_chat_id: '',
+    discord_webhook_url: '',
+    slack_webhook_url: '',
+    slack_channel: '',
+    webhook_url: '',
+    webhook_method: 'POST',
+    webhook_headers: '',
+    webhook_payload: ''
+  }
+}
+
+async function submitForm() {
+  submitting.value = true
+  
+  try {
+    const formData = { ...form.value }
+    
+    // Parse JSON fields
+    if (formData.webhook_headers) {
+      try {
+        formData.webhook_headers = JSON.parse(formData.webhook_headers)
+      } catch (e) {
+        alert('Invalid JSON format in webhook headers')
+        submitting.value = false
+        return
+      }
+    }
+    
+    if (formData.webhook_payload) {
+      try {
+        formData.webhook_payload = JSON.parse(formData.webhook_payload)
+      } catch (e) {
+        alert('Invalid JSON format in webhook payload')
+        submitting.value = false
+        return
+      }
+    }
+    
+    let response
+    if (editingChannel.value) {
+      response = await api.notificationChannels.update(editingChannel.value.id, formData)
+    } else {
+      response = await api.notificationChannels.create(formData)
+    }
+    
+    if (response.data.success) {
+      await fetchChannels()
+      cancelForm()
+    } else {
+      alert(response.data.message || 'Failed to save channel')
+    }
+  } catch (err) {
+    console.error('Failed to save channel:', err)
+    alert('An error occurred while saving the channel')
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function deleteChannel(channelId) {
+  if (!confirm('Are you sure you want to delete this notification channel?')) {
+    return
+  }
+  
+  try {
+    const response = await api.notificationChannels.delete(channelId)
+    
+    if (response.data.success) {
+      await fetchChannels()
+    } else {
+      alert(response.data.message || 'Failed to delete channel')
+    }
+  } catch (err) {
+    console.error('Failed to delete channel:', err)
+    alert('An error occurred while deleting the channel')
+  }
+}
+
+async function testChannel() {
+  testing.value = true
+  
+  try {
+    const response = await api.notificationChannels.test(editingChannel.value.id)
+    
+    if (response.data.success) {
+      alert('Test notification sent successfully!')
+    } else {
+      alert(response.data.message || 'Failed to send test notification')
+    }
+  } catch (err) {
+    console.error('Failed to test channel:', err)
+    alert('An error occurred while testing the channel')
+  } finally {
+    testing.value = false
+  }
+}
+
+async function testChannelById(channelId) {
+  try {
+    const response = await api.notificationChannels.test(channelId)
+    
+    if (response.data.success) {
+      alert('Test notification sent successfully!')
+    } else {
+      alert(response.data.message || 'Failed to send test notification')
+    }
+  } catch (err) {
+    console.error('Failed to test channel:', err)
+    alert('An error occurred while testing the channel')
+  }
+}
+
+function maskToken(token) {
+  if (!token) return ''
+  return token.substring(0, 8) + '...' + token.substring(token.length - 8)
+}
+
+function maskUrl(url) {
+  if (!url) return ''
+  return url.substring(0, 30) + '...'
+}
+</script>
+
+<style scoped>
+.notification-channels {
+  padding: 20px;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.page-header h1 {
+  margin: 0;
+  color: #2c3e50;
+}
+
+.channel-form-container {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  margin-bottom: 30px;
+}
+
+.channel-form {
+  padding: 30px;
+}
+
+.channel-form h2 {
+  margin: 0 0 30px 0;
+  color: #2c3e50;
+}
+
+.form-section {
+  margin: 30px 0;
+  padding: 20px;
+  background-color: #f8f9fa;
+  border-radius: 6px;
+}
+
+.form-section h3 {
+  margin: 0 0 20px 0;
+  color: #34495e;
+  font-size: 1.1em;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+  color: #2c3e50;
+}
+
+.form-control {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.form-control:focus {
+  outline: none;
+  border-color: #3498db;
+  box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+}
+
+.form-hint {
+  display: block;
+  margin-top: 5px;
+  font-size: 0.8em;
+  color: #7f8c8d;
+}
+
+.telegram-help, .discord-help, .slack-help {
+  margin-top: 20px;
+  padding: 15px;
+  background-color: #e8f4f8;
+  border-left: 4px solid #3498db;
+  border-radius: 4px;
+}
+
+.telegram-help h4, .discord-help h4, .slack-help h4 {
+  margin: 0 0 10px 0;
+  color: #2980b9;
+  font-size: 0.9em;
+}
+
+.telegram-help ol, .discord-help ol, .slack-help ol {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.telegram-help li, .discord-help li, .slack-help li {
+  margin-bottom: 5px;
+  font-size: 0.8em;
+  color: #34495e;
+}
+
+.form-actions {
+  display: flex;
+  gap: 15px;
+  padding-top: 30px;
+  border-top: 1px solid #ecf0f1;
+  margin-top: 30px;
+}
+
+.channels-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 20px;
+}
+
+.channel-card {
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  padding: 20px;
+  border: 2px solid transparent;
+  transition: all 0.2s ease;
+}
+
+.channel-card:hover {
+  border-color: #3498db;
+  transform: translateY(-2px);
+}
+
+.channel-card.channel-disabled {
+  opacity: 0.6;
+  background-color: #f8f9fa;
+}
+
+.channel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 15px;
+}
+
+.channel-type-badge {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.7em;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.channel-type-badge.type-telegram {
+  background-color: #e3f2fd;
+  color: #1976d2;
+}
+
+.channel-type-badge.type-discord {
+  background-color: #ede7f6;
+  color: #5e35b1;
+}
+
+.channel-type-badge.type-slack {
+  background-color: #e8f5e8;
+  color: #388e3c;
+}
+
+.channel-type-badge.type-webhook {
+  background-color: #fff3e0;
+  color: #f57c00;
+}
+
+.status-indicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #bdc3c7;
+  display: block;
+}
+
+.status-indicator.status-enabled {
+  background-color: #27ae60;
+}
+
+.channel-name {
+  margin: 0 0 15px 0;
+  color: #2c3e50;
+  font-size: 1.1em;
+}
+
+.channel-details {
+  margin-bottom: 20px;
+  font-size: 0.9em;
+  color: #7f8c8d;
+  line-height: 1.5;
+}
+
+.channel-details strong {
+  color: #2c3e50;
+}
+
+.channel-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.no-channels {
+  text-align: center;
+  padding: 60px 20px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.no-channels h2 {
+  margin: 0 0 15px 0;
+  color: #2c3e50;
+}
+
+.no-channels p {
+  margin: 0 0 30px 0;
+  color: #7f8c8d;
+  max-width: 500px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background-color: #3498db;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #2980b9;
+}
+
+.btn-secondary {
+  background-color: #95a5a6;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background-color: #7f8c8d;
+}
+
+.btn-info {
+  background-color: #17a2b8;
+  color: white;
+}
+
+.btn-info:hover:not(:disabled) {
+  background-color: #138496;
+}
+
+.btn-danger {
+  background-color: #e74c3c;
+  color: white;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background-color: #c0392b;
+}
+
+.btn-sm {
+  padding: 5px 10px;
+  font-size: 0.8em;
+}
+
+.btn-lg {
+  padding: 12px 24px;
+  font-size: 1.1em;
+}
+
+@media (max-width: 768px) {
+  .notification-channels {
+    padding: 10px;
+  }
+  
+  .page-header {
+    flex-direction: column;
+    gap: 15px;
+    align-items: stretch;
+  }
+  
+  .channel-form {
+    padding: 20px;
+  }
+  
+  .channels-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .form-actions {
+    flex-direction: column;
+    gap: 10px;
+  }
+  
+  .channel-actions {
+    justify-content: stretch;
+  }
+}
+</style>
