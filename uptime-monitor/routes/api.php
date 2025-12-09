@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\MonitorCheckController;
 use App\Http\Controllers\Api\IncidentController;
 use App\Http\Controllers\Api\NotificationChannelController;
 use App\Http\Controllers\Api\MonitoringLogController;
+use App\Http\Controllers\Api\TelegramWebhookController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -36,6 +37,9 @@ Route::prefix('auth')->group(function () {
     Route::post('register', [AuthController::class, 'register']);
     Route::post('login', [AuthController::class, 'login']);
 });
+
+// Telegram Webhook (public - no auth required)
+Route::post('telegram/webhook', [TelegramWebhookController::class, 'webhook']);
 
 // Protected routes
 Route::middleware('auth:api')->group(function () {
@@ -71,6 +75,7 @@ Route::middleware('auth:api')->group(function () {
     // Notification channels routes
     Route::apiResource('notification-channels', NotificationChannelController::class);
     Route::post('notification-channels/{notificationChannel}/test', [NotificationChannelController::class, 'test']);
+    Route::post('notification-channels/{notificationChannel}/toggle', [NotificationChannelController::class, 'toggle']);
 
     // Monitor checks routes
     Route::apiResource('monitor-checks', MonitorCheckController::class)->only(['index', 'show']);

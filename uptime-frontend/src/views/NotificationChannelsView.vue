@@ -40,6 +40,20 @@
           </select>
         </div>
 
+        <div class="form-group">
+          <label class="checkbox-label">
+            <input
+              type="checkbox"
+              v-model="form.is_enabled"
+              class="form-checkbox"
+            >
+            <span>Enable this notification channel</span>
+          </label>
+          <small class="form-hint">
+            Disabled channels will not receive notifications even if linked to monitors
+          </small>
+        </div>
+
         <!-- Telegram Configuration -->
         <div v-if="form.type === 'telegram'" class="form-section">
           <h3>Telegram Configuration</h3>
@@ -245,14 +259,19 @@
         v-for="channel in channels"
         :key="channel.id"
         class="channel-card"
+        :class="{ 'channel-disabled': !channel.is_enabled }"
       >
         <div class="channel-header">
           <div class="channel-type-badge" :class="`type-${channel.type}`">
             {{ channel.type.toUpperCase() }}
           </div>
+          <div class="status-indicator" :class="channel.is_enabled ? 'status-enabled' : 'status-disabled'"></div>
         </div>
         
-        <h3 class="channel-name">{{ channel.name }}</h3>
+        <h3 class="channel-name">
+          {{ channel.name }}
+          <span v-if="!channel.is_enabled" class="disabled-badge">DISABLED</span>
+        </h3>
         
         <div class="channel-details">
           <div v-if="channel.type === 'telegram' && channel.config">
@@ -278,10 +297,20 @@
         </div>
         
         <div class="channel-actions">
+          <button 
+            @click="toggleChannel(channel.id)" 
+            :class="channel.is_enabled ? 'btn btn-warning btn-sm' : 'btn btn-success btn-sm'"
+          >
+            {{ channel.is_enabled ? 'Disable' : 'Enable' }}
+          </button>
           <button @click="editChannel(channel)" class="btn btn-primary btn-sm">
             Edit
           </button>
-          <button @click="testChannelById(channel.id)" class="btn btn-info btn-sm">
+          <button 
+            @click="testChannelById(channel.id)" 
+            :disabled="!channel.is_enabled"
+            class="btn btn-info btn-sm"
+          >
             Test
           </button>
           <button @click="deleteChannel(channel.id)" class="btn btn-danger btn-sm">
@@ -307,6 +336,7 @@ const testing = ref(false)
 const form = ref({
   name: '',
   type: 'telegram',
+  is_enabled: true,
   
   // Telegram
   telegram_bot_token: '',
@@ -370,6 +400,7 @@ function editChannel(channel) {
   // Set basic fields
   form.value.name = channel.name
   form.value.type = channel.type
+  form.value.is_enabled = channel.is_enabled !== undefined ? channel.is_enabled : true
   
   // Parse config object based on channel type
   if (channel.config) {
@@ -410,6 +441,7 @@ function resetForm() {
   form.value = {
     name: '',
     type: 'telegram',
+    is_enabled: true,
     telegram_bot_token: '',
     telegram_chat_id: '',
     discord_webhook_url: '',
@@ -474,7 +506,8 @@ async function submitForm() {
     const formData = {
       name: form.value.name,
       type: form.value.type,
-      config: config
+      config: config,
+      is_enabled: form.value.is_enabled
     }
     
     let response
@@ -583,6 +616,21 @@ async function testChannelById(channelId) {
     }
     
     alert(`Error: ${errorMessage}`)
+  }
+}
+
+async function toggleChannel(channelId) {
+  try {
+    const response = await api.notificationChannels.toggle(channelId)
+    
+    if (response.data.success) {
+      await fetchChannels()
+    } else {
+      alert(response.data.message || 'Gagal mengubah status channel')
+    }
+  } catch (err) {
+    console.error('Failed to toggle channel:', err)
+    alert('Terjadi kesalahan saat mengubah status channel')
   }
 }
 
@@ -729,8 +777,13 @@ function maskUrl(url) {
 }
 
 .channel-card.channel-disabled {
-  opacity: 0.6;
+  opacity: 0.7;
   background-color: #f8f9fa;
+  border: 2px solid #e0e0e0;
+}
+
+.channel-card.channel-disabled:hover {
+  border-color: #bdc3c7;
 }
 
 .channel-header {
@@ -778,12 +831,29 @@ function maskUrl(url) {
 
 .status-indicator.status-enabled {
   background-color: #27ae60;
+  box-shadow: 0 0 8px rgba(39, 174, 96, 0.6);
+}
+
+.status-indicator.status-disabled {
+  background-color: #e74c3c;
 }
 
 .channel-name {
   margin: 0 0 15px 0;
   color: #2c3e50;
   font-size: 1.1em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.disabled-badge {
+  font-size: 0.6em;
+  padding: 3px 6px;
+  background-color: #e74c3c;
+  color: white;
+  border-radius: 3px;
+  font-weight: bold;
 }
 
 .channel-details {
@@ -887,6 +957,20 @@ function maskUrl(url) {
 .btn-lg {
   padding: 12px 24px;
   font-size: 1.1em;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.form-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
 }
 
 @media (max-width: 768px) {

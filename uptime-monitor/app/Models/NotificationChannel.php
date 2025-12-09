@@ -15,10 +15,12 @@ class NotificationChannel extends Model
         'type',
         'config',
         'created_by',
+        'is_enabled',
     ];
 
     protected $casts = [
         'config' => 'array',
+        'is_enabled' => 'boolean',
     ];
 
     // Relationships

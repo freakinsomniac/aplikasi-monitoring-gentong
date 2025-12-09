@@ -28,6 +28,7 @@ class ProcessMonitorCheck implements ShouldQueue
     public function __construct(Monitor $monitor)
     {
         $this->monitor = $monitor;
+        $this->onQueue('monitor-checks');
     }
 
     /**

@@ -139,6 +139,31 @@ class NotificationChannelController extends Controller
     }
 
     /**
+     * Toggle notification channel enabled/disabled status
+     */
+    public function toggle(NotificationChannel $notificationChannel): JsonResponse
+    {
+        if ($notificationChannel->created_by !== auth('api')->id()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Unauthorized access'
+            ], 403);
+        }
+
+        $notificationChannel->update([
+            'is_enabled' => !$notificationChannel->is_enabled
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => $notificationChannel->is_enabled 
+                ? 'Notification channel enabled successfully' 
+                : 'Notification channel disabled successfully',
+            'data' => $notificationChannel
+        ]);
+    }
+
+    /**
      * Test notification channel (FR-15)
      */
     public function test(Request $request, NotificationChannel $notificationChannel): JsonResponse

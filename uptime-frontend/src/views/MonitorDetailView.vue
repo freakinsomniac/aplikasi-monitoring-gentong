@@ -5,7 +5,12 @@
     <div class="detail-header">
       <div class="header-content">
         <div class="monitor-title">
-          <h1>{{ monitor?.name || 'Loading...' }}</h1>
+          <h1>
+            {{ monitor?.name || 'Loading...' }}
+            <span v-if="chartRefreshInterval" class="live-badge" title="Auto-refreshing every 1 second">
+              <span class="live-dot"></span> Live
+            </span>
+          </h1>
           <div class="monitor-url">
             <span class="url-text">{{ monitor?.target }}</span>
             <button 
@@ -424,6 +429,31 @@ async function fetchMonitorData() {
   }
 }
 
+// Refresh monitor data silently (without loading state) for auto-refresh
+async function refreshMonitorData() {
+  try {
+    const result = await monitorStore.fetchMonitor(route.params.id)
+    
+    if (result.success) {
+      // Update only specific fields to avoid disrupting UI
+      monitor.value.last_status = result.data.last_status
+      monitor.value.last_checked_at = result.data.last_checked_at
+      monitor.value.last_latency_ms = result.data.last_latency_ms
+      monitor.value.uptime_percentage = result.data.uptime_percentage
+      
+      console.log('🔄 Monitor data refreshed:', {
+        status: result.data.last_status,
+        checked_at: result.data.last_checked_at,
+        latency: result.data.last_latency_ms
+      })
+    }
+  } catch (err) {
+    // Silent fail for background refresh
+    console.error('⚠️ Background refresh failed:', err)
+  }
+}
+
+
 async function fetchStatusHistory() {
   try {
     console.log('🔍 Fetching status history for monitor:', route.params.id)
@@ -528,6 +558,8 @@ function startChartAutoRefresh() {
       const timestamp = new Date().toLocaleTimeString()
       console.log(`⏰ [${timestamp}] Triggering chart auto-refresh...`)
       updateChartRealtime()
+      // Also refresh monitor data to update last_checked_at and status
+      refreshMonitorData()
     } else {
       console.log('⏭️ Skipping auto-refresh - conditions not met:', {
         hasCanvas: !!responseChart.value,
@@ -1074,7 +1106,55 @@ function formatDateTime(dateString) {
   font-size: 2rem;
   font-weight: 600;
   color: #080808;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
+
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  background: linear-gradient(135deg, #00b894 0%, #00d2a0 100%);
+  color: white;
+  border-radius: 20px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 8px rgba(0, 184, 148, 0.3);
+  animation: pulse-badge 2s ease-in-out infinite;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  background: white;
+  border-radius: 50%;
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-badge {
+  0%, 100% {
+    box-shadow: 0 2px 8px rgba(0, 184, 148, 0.3);
+  }
+  50% {
+    box-shadow: 0 2px 16px rgba(0, 184, 148, 0.5);
+  }
+}
+
+@keyframes pulse-dot {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    transform: scale(0.8);
+  }
+}
+
 
 .monitor-url {
   display: flex;

@@ -70,11 +70,41 @@ class SendNotification implements ShouldQueue
      */
     public function handle(): void
     {
+        Log::info("SendNotification job started", [
+            'monitor_id' => $this->monitor->id ?? 'unknown',
+            'monitor_name' => $this->monitor->name ?? 'unknown',
+            'notification_type' => $this->type,
+            'has_manual_channel' => $this->channel ? 'yes' : 'no',
+        ]);
+
         // Get notification channels for this monitor
         $channels = $this->channel ? [$this->channel] : $this->getMonitorChannels();
 
+        Log::info("Channels loaded for notification", [
+            'monitor_id' => $this->monitor->id ?? 'unknown',
+            'channels_count' => count($channels),
+            'notification_type' => $this->type,
+        ]);
+
+        if (count($channels) === 0) {
+            Log::warning("No enabled channels found - notification will not be sent", [
+                'monitor_id' => $this->monitor->id ?? 'unknown',
+                'monitor_name' => $this->monitor->name ?? 'unknown',
+                'notification_type' => $this->type,
+            ]);
+            return;
+        }
+
         foreach ($channels as $channel) {
             try {
+                Log::info("Attempting to send notification to channel", [
+                    'monitor_id' => $this->monitor->id ?? 'test',
+                    'channel_id' => $channel->id,
+                    'channel_name' => $channel->name,
+                    'channel_type' => $channel->type,
+                    'is_enabled' => $channel->is_enabled ?? 'unknown',
+                ]);
+                
                 $this->sendToChannel($channel);
                 
                 Log::info("Notification sent successfully", [
@@ -110,10 +140,50 @@ class SendNotification implements ShouldQueue
         $channelIds = $this->monitor->notification_channels ?? [];
         
         if (empty($channelIds)) {
+            Log::info("No notification channels configured for monitor", [
+                'monitor_id' => $this->monitor->id,
+                'monitor_name' => $this->monitor->name,
+            ]);
             return [];
         }
 
-        return NotificationChannel::whereIn('id', $channelIds)->get()->all();
+        // Get all channels (including disabled ones for logging)
+        $allChannels = NotificationChannel::whereIn('id', $channelIds)->get();
+        
+        // Filter only enabled channels
+        $enabledChannels = $allChannels->filter(function($channel) {
+            return $channel->is_enabled === true;
+        });
+        
+        // Log disabled channels that are being skipped
+        $disabledChannels = $allChannels->filter(function($channel) {
+            return $channel->is_enabled === false;
+        });
+        
+        if ($disabledChannels->count() > 0) {
+            foreach ($disabledChannels as $channel) {
+                Log::info("Skipping disabled notification channel", [
+                    'monitor_id' => $this->monitor->id,
+                    'monitor_name' => $this->monitor->name,
+                    'channel_id' => $channel->id,
+                    'channel_name' => $channel->name,
+                    'channel_type' => $channel->type,
+                    'is_enabled' => $channel->is_enabled,
+                    'notification_type' => $this->type,
+                ]);
+            }
+        }
+        
+        Log::info("Notification channels loaded", [
+            'monitor_id' => $this->monitor->id,
+            'monitor_name' => $this->monitor->name,
+            'total_configured' => count($channelIds),
+            'total_found' => $allChannels->count(),
+            'enabled_count' => $enabledChannels->count(),
+            'disabled_count' => $disabledChannels->count(),
+        ]);
+
+        return $enabledChannels->all();
     }
 
     protected function sendToChannel(NotificationChannel $channel): void
