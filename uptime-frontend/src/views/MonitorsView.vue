@@ -88,7 +88,7 @@
         placeholder="Search by name, target, or group..."
           >
         </div>
-        
+
         <div class="filter-group">
           <label for="group-filter" class="form-label">Group:</label>
           <select 
@@ -101,6 +101,16 @@
         <option v-for="group in groups" :key="group.id" :value="group.name">
           {{ group.name }}
         </option>
+          </select>
+          
+        </div>
+         <div class="filter-group">
+          <label for="groups-perpage" class="form-label">Groups / page</label>
+          <select id="groups-perpage" v-model.number="groupsPerPage" class="form-control groups-perpage-select">
+            <option :value="5">5</option>
+            <option :value="10">10</option>
+            <option :value="20">20</option>
+            <option :value="100">100</option>
           </select>
         </div>
         
@@ -371,14 +381,21 @@
     <!-- Enhanced Grouped View -->
     <div v-if="viewMode === 'grouped' && !monitorStore.loading && !monitorStore.error" class="grouped-view">
       <div v-for="groupName in paginatedGroupKeys" :key="groupName" class="group-section">
-        <div class="group-header">
+        <div
+          class="group-header clickable-header"
+          role="button"
+          tabindex="0"
+          @click="navigateToGroup(groupName)"
+          @keyup.enter="navigateToGroup(groupName)"
+          @keyup.space.prevent="navigateToGroup(groupName)"
+        >
           <div class="group-title-section">
-            <h2>
-              <span v-if="groupName === 'Ungrouped'" class="group-icon">📂</span>
-              <span v-else class="group-icon">📁</span>
-              {{ groupName }}
-              <span class="monitor-count">({{ getFilteredGroupMonitors(filteredGroupedMonitors[groupName].monitors, groupName).length }})</span>
-            </h2>
+              <h2 class="group-title">
+                <span v-if="groupName === 'Ungrouped'" class="group-icon">📂</span>
+                <span v-else class="group-icon">📁</span>
+                {{ groupName }}
+                <span class="monitor-count">({{ getFilteredGroupMonitors(filteredGroupedMonitors[groupName].monitors, groupName).length }})</span>
+              </h2>
             <p v-if="filteredGroupedMonitors[groupName].description" class="group-description">{{ filteredGroupedMonitors[groupName].description }}</p>
           </div>
           
@@ -403,7 +420,7 @@
           </div>
         </div>
 
-        <!-- Group Search -->
+        <!-- Group Search
         <div class="group-search">
           <input
             v-model="groupSearches[groupName]"
@@ -411,7 +428,7 @@
             class="form-control group-search-input"
             :placeholder="`Search in ${groupName}...`"
           >
-        </div>
+        </div> -->
 
         <div class="group-monitors">
           <div
@@ -451,7 +468,7 @@
         </div>
       </div>
       <!-- Groups pagination controls -->
-      <div class="groups-pagination" v-if="Object.keys(filteredGroupedMonitors).length > groupsPerPage">
+      <div class="groups-pagination" v-if="totalGroupsPages > 1">
         <button class="btn btn-sm" :disabled="groupsPage === 1" @click.stop="groupsPrev">Prev</button>
         <span class="group-page-info">Halaman {{ groupsPage }} / {{ totalGroupsPages }}</span>
         <button class="btn btn-sm" :disabled="groupsPage >= totalGroupsPages" @click.stop="groupsNext">Next</button>
@@ -571,7 +588,7 @@ function groupPageNext(groupName, monitors) {
 
 // Groups pagination (paginate group sections)
 const groupsPage = ref(1)
-const groupsPerPage = ref(4)
+const groupsPerPage = ref(5)
 const totalGroupsPages = computed(() => {
   const count = Object.keys(filteredGroupedMonitors.value).length
   return Math.max(1, Math.ceil(count / groupsPerPage.value))
@@ -787,6 +804,12 @@ function formatLastCheck(timestamp) {
 
 function navigateToDetails(monitorId) {
   router.push(`/monitors/${monitorId}`)
+}
+
+function navigateToGroup(groupName) {
+  // route to group detail view; encode group name to be URL-safe
+  const encoded = encodeURIComponent(groupName)
+  router.push(`/groups/${encoded}`)
 }
 
 function visitMonitor(monitor) {
@@ -1053,6 +1076,14 @@ watch(
   }
 )
 
+// reset groups pagination when groupsPerPage changes
+watch(
+  () => groupsPerPage.value,
+  () => {
+    groupsPage.value = 1
+  }
+)
+
 // Initialize group searches when grouped monitors change
 watch(
   () => groupedMonitors.value,
@@ -1086,7 +1117,10 @@ onUnmounted(() => {
 }
 
 .page-header {
-  margin-bottom: 30px;
+  margin: 0 0 18px 0;
+  padding: 0; /* we'll control inner spacing via header-content */
+  width: 100%;
+  background: transparent;
 }
 
 .header-content {
@@ -1095,6 +1129,15 @@ onUnmounted(() => {
   align-items: center;
   flex-wrap: wrap;
   gap: 20px;
+}
+
+/* Make header stretch full width but keep inner content centered with controlled padding */
+.page-header .header-content {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 18px 20px; /* main header inner padding */
+  box-sizing: border-box;
+  align-items: center;
 }
 
 .header-main h1 {
@@ -1171,15 +1214,16 @@ onUnmounted(() => {
 }
 
 .stat-card {
-  background: white;
+  background: #ffffff;
+  color: #111827;
   border-radius: 12px;
   padding: 24px 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1px solid #e6e6e6;
   display: flex;
   align-items: center;
   gap: 16px;
-  transition: all 0.3s ease;
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.15s ease, color 0.15s ease;
   animation: fadeInUp 0.5s ease forwards;
   opacity: 0;
   transform: translateY(20px);
@@ -1189,8 +1233,18 @@ onUnmounted(() => {
 
 .stat-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
-  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.12);
+  border-color: #d1d5db;
+}
+
+/* Keep stat-card stable on tap/click */
+.stat-card,
+.stat-card:active,
+.stat-card:focus {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  background-color: inherit !important;
+  color: inherit !important;
 }
 
 .stat-icon {
@@ -1210,9 +1264,15 @@ onUnmounted(() => {
   margin: 0;
   font-size: 1.75em;
   font-weight: 700;
-  color: #2c3e50;
+  color: #111827;
   line-height: 1.2;
   text-align: center;
+}
+
+/* Removed empty ruleset: .stat-card:hover .stat-content h3 */
+
+.stat-card:hover .stat-icon {
+  background: rgba(0,0,0,0.04);
 }
 
 .stat-content p {
@@ -1237,22 +1297,22 @@ onUnmounted(() => {
 }
 
 .stat-card.health.health-excellent {
-  background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%);
+  /* background: linear-gradient(135deg, #56ab2f 0%, #a8e6cf 100%); */
   color: white;
 }
 
 .stat-card.health.health-good {
-  background: linear-gradient(135deg, #f7971e 0%, #ffd200 100%);
+  /* background: linear-gradient(135deg, #f7971e 0%, #ffd200 100%); */
   color: white;
 }
 
 .stat-card.health.health-warning {
-  background: linear-gradient(135deg, #f12711 0%, #f5af19 100%);
+  /* background: linear-gradient(135deg, #f12711 0%, #f5af19 100%); */
   color: white;
 }
 
 .stat-card.health.health-critical {
-  background: linear-gradient(135deg, #c94b4b 0%, #4b134f 100%);
+  /* background: linear-gradient(135deg, #c94b4b 0%, #4b134f 100%); */
   color: white;
 }
 
@@ -1618,7 +1678,7 @@ onUnmounted(() => {
 }
 
 .group-section {
-  margin-bottom: 40px;
+  margin-bottom: 16px;
 }
 
 .group-header {
@@ -1631,11 +1691,32 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
-  gap: 20px;
-  margin-bottom: 20px;
-  padding: 18px 24px;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 14px 20px;
   position: relative;
   overflow: hidden;
+}
+
+.clickable-header {
+  cursor: pointer;
+}
+
+.clickable-header:focus {
+  outline: none;
+  box-shadow: 0 0 0 6px rgba(116,185,255,0.10);
+  border-radius: 12px;
+}
+
+.group-title.clickable-group {
+  cursor: pointer;
+  text-decoration: underline dotted rgba(0,0,0,0.12);
+}
+
+.group-title.clickable-group:focus {
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(116,185,255,0.12);
+  border-radius: 6px;
 }
 
 .group-title-section h2 {
@@ -1746,6 +1827,18 @@ onUnmounted(() => {
   font-style: italic;
 }
 
+.groups-controls {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: flex-end;
+  margin: 6px 0 10px 0;
+  font-size: 0.9rem;
+}
+.groups-perpage-label { font-weight: 500; color: #495057; font-size: 0.85rem }
+.groups-perpage-select { width: 72px; padding: 4px 8px; border-radius: 6px; font-size: 0.85rem }
+.groups-perpage-select option { font-size: 0.85rem }
+
 .group-monitors {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -1760,6 +1853,11 @@ onUnmounted(() => {
   background: linear-gradient(180deg,#ffffff,#fbfdff);
   transition: transform 0.18s cubic-bezier(.22,.9,.36,1), box-shadow 0.18s ease;
   margin-bottom: 10px;
+}
+
+/* Hide compact group monitor cards when requested */
+.monitor-card.compact {
+  display: none !important;
 }
 
 .monitor-card.compact.clickable {
@@ -1961,8 +2059,16 @@ onUnmounted(() => {
     padding-top: 5rem;
   }
   
+  /* On smaller screens reduce header inner padding and center title */
+  .page-header .header-content {
+    padding: 12px 10px;
+    gap: 8px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .page-header {
-    padding: 1.25rem;
+    margin-bottom: 12px;
   }
   
   .header-content {
@@ -2058,7 +2164,13 @@ onUnmounted(() => {
   .stat-card {
     padding: 1rem;
   }
-  
+
+  /* Responsive stat-card padding for mobile */
+  @media (max-width: 480px) {
+    .stat-card {
+      padding: 0.5rem;
+    }
+  }
   .monitor-card {
     padding: 1rem;
   }
@@ -2235,5 +2347,61 @@ onUnmounted(() => {
   justify-content: center;
   align-items: center;
   margin-top: 16px;
+}
+.groups-pagination {
+  margin-top: 20px;
+}
+
+/* Mobile-specific overrides: make stat cards a two-column grid and tighten spacing */
+@media (max-width: 480px) {
+  .stats-cards {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+
+  .stat-card {
+    padding: 16px;
+    border-radius: 10px;
+    min-height: 100px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+  }
+
+  .stat-icon {
+    width: 52px;
+    height: 52px;
+    font-size: 1.6em;
+    margin-bottom: 8px;
+  }
+
+  .stat-content h3 {
+    font-size: 1.5em;
+    margin: 0;
+    line-height: 1.1;
+  }
+
+  .stat-content p {
+    font-size: 0.95em;
+    margin: 6px 0 0 0;
+  }
+
+  /* Ensure header action buttons stack and are full-width on small screens */
+  .header-actions {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .header-actions .btn {
+    width: 100%;
+  }
+
+  .header-main h1 {
+    font-size: 1.6rem;
+  }
 }
 </style>

@@ -6,9 +6,9 @@
     </button>
     
     <!-- Desktop Toggle Button -->
-    <button class="navbar-toggle" @click="toggleSidebar">
+    <!-- <button class="navbar-toggle" @click="toggleSidebar">
       <i class="fas" :class="isCollapsed ? 'fa-chevron-right' : 'fa-chevron-left'"></i>
-    </button>
+    </button> -->
     
     <div class="navbar-brand">
       <div class="brand-content">

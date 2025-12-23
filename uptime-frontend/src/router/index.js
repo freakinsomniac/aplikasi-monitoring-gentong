@@ -11,6 +11,7 @@ import EditMonitorView from '../views/EditMonitorView.vue'
 import NotificationChannelsView from '../views/NotificationChannelsView.vue'
 import IncidentsView from '../views/IncidentsView.vue'
 import LogsView from '../views/LogsView.vue'
+import GroupDetailView from '../views/GroupDetailView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -81,6 +82,14 @@ const router = createRouter({
       component: LogsView,
       meta: { requiresAuth: true },
       props: route => ({ monitorId: route.params.id })
+    }
+    ,
+    {
+      path: '/groups/:name',
+      name: 'GroupDetail',
+      component: GroupDetailView,
+      meta: { requiresAuth: true },
+      props: true
     }
   ]
 })

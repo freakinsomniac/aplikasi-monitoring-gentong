@@ -496,6 +496,37 @@ async function retryConnection() {
   margin-bottom: 16px;
   flex-wrap: wrap;
   gap: 12px;
+  /* keep default small-screen spacing; enhanced styles applied at desktop breakpoint */
+}
+
+/* Desktop: center page and give header proper breathing space */
+@media (min-width: 1024px) {
+  .incidents { max-width: 1200px; margin: 0 auto; padding: 28px 20px; }
+
+  .page-header {
+    padding: 22px 24px;
+    background: #ffffff;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(15,23,36,0.04);
+    margin-bottom: 20px;
+    align-items: center;
+    gap: 18px;
+  }
+
+  .page-header h1 {
+    font-size: 1.9rem;
+    margin: 0;
+    line-height: 1;
+  }
+
+  .header-actions {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .filter-group { min-width: 220px; }
 }
 
 .page-header h1 {
@@ -1142,38 +1173,53 @@ async function retryConnection() {
   /* Stack each row vertically and show key fields */
   .incidents-list.view-list .incident-card {
     display: block;
-    padding: 8px 12px;
-    border-bottom: 1px solid #eef1f3;
+    padding: 0; /* card inner padding handled below */
+    border-bottom: none;
     background: transparent;
     border-radius: 0;
     margin-bottom: 0;
   }
 
   .list-row { display: block }
-  .list-row .name { display: block; margin-bottom: 6px; font-weight: 700 }
+  .list-row .name { display: block; margin-bottom: 8px; font-weight: 700; font-size: 1rem }
   .list-row .status { display: inline-block; margin-right: 8px }
-  .list-row .datetime { display: block; color: #7f8c8d; margin-top: 6px }
-  .list-row .message { display: block; margin-top: 6px; color: #34495e }
+  .list-row .datetime { display: block; color: #7f8c8d; margin-top: 6px; font-size: 0.92rem }
+  .list-row .message { display: block; margin-top: 8px; color: #34495e; line-height: 1.4 }
+
+  /* Wrap each incident in a subtle card for mobile */
+  .incidents-list.view-list .incident-card > .list-row {
+    background: #ffffff;
+    border-radius: 10px;
+    box-shadow: 0 6px 16px rgba(15,23,36,0.04);
+    padding: 12px;
+    margin: 0 0 12px 0;
+  }
   .list-row .actions { margin-top: 8px; display: flex; gap: 8px }
 
-  /* Button layout: keep natural width on desktop, expand on small screens */
+  /* Button layout: stack and stretch for easy tapping on mobile */
   .list-row .actions .btn {
-    flex: 0 0 auto;
-    white-space: nowrap;
+    flex: 1 1 auto;
+    white-space: normal;
     text-align: center;
+    min-width: 0;
   }
 
   /* Ensure action buttons have a sensible minimum width so labels fit */
   .list-row .actions .btn-sm {
-    min-width: 120px;
-    padding: 6px 12px;
+    min-width: 112px;
+    padding: 8px 12px;
   }
   
   .page-header {
-    padding: 1.25rem;
+    padding: 1rem;
     flex-direction: column;
     align-items: stretch;
     gap: 1rem;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(15,23,36,0.04);
+    padding-top: 1.25rem;
+    padding-bottom: 1.25rem;
   }
   
   .page-header h1 {
@@ -1293,5 +1339,39 @@ async function retryConnection() {
     padding: 0.375rem 0.75rem;
     font-size: 0.75rem;
   }
+}
+
+/* Ensure list view on small screens: force list-row appearance (not card) */
+@media (max-width: 768px) {
+  .incidents-list.view-list .incident-card {
+    display: block !important;
+    padding: 8px 12px !important;
+    box-shadow: none !important;
+    border-left-width: 0 !important;
+    border-bottom: 1px solid #eef1f3 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    margin-bottom: 0 !important;
+  }
+
+  .incidents-list.view-list .list-row {
+    display: block !important;
+    padding: 0 !important;
+  }
+
+  .list-row .name { display: block !important; margin-bottom: 6px; font-weight: 700 }
+  .list-row .status { display: inline-block !important; margin-right: 8px }
+  .list-row .datetime { display: block !important; color: #7f8c8d; margin-top: 6px }
+  .list-row .message { display: block !important; margin-top: 6px; color: #34495e }
+
+  .list-row .actions {
+    margin-top: 8px !important;
+    display: flex !important;
+    gap: 8px !important;
+    justify-content: flex-start !important;
+    flex-wrap: wrap !important;
+  }
+
+  .list-row .actions .btn-sm { min-width: 120px !important }
 }
 </style>

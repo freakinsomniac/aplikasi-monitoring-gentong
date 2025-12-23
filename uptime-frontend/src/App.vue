@@ -81,6 +81,20 @@ body {
   margin-bottom: 20px;
 }
 
+/* Make page headers full width inside main content (remove left/right padding) */
+.main-content .page-header {
+  width: 100%;
+  padding-left: 0;
+  padding-right: 0;
+  margin-left: 0;
+  margin-right: 0;
+}
+
+/* If individual views add container padding, ensure header stretches edge-to-edge visually */
+.main-content .page-header > * {
+  width: 100%;
+}
+
 .btn {
   padding: 10px 20px;
   border: none;

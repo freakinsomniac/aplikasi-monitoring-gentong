@@ -92,18 +92,38 @@
                   <option value="new">Create New Group</option>
                 </select>
                 
-                <!-- Existing Group Selector -->
-                <select
-                  v-if="selectedGroupType === 'existing'"
-                  v-model="form.group_name"
-                  class="form-control"
-                  @change="onExistingGroupSelect"
-                >
-                  <option value="">Choose a group...</option>
-                  <option v-for="group in groupsWithInfo" :key="group.name" :value="group.name">
-                    📁 {{ group.name }} ({{ group.monitorsCount }} monitors)
-                  </option>
-                </select>
+                <!-- Existing Group Selector (searchable) -->
+                <div v-if="selectedGroupType === 'existing'" class="group-search-wrapper">
+                  <input
+                    type="text"
+                    class="form-control group-search"
+                    placeholder="Search groups..."
+                    v-model="groupSearch"
+                    @input="onGroupSearchInput"
+                    @focus="showGroupDropdown = true"
+                    @keydown.down.prevent="focusNextGroup()"
+                    @keydown.up.prevent="focusPrevGroup()"
+                    @keydown.enter.prevent="selectHighlightedGroup()"
+                    aria-autocomplete="list"
+                    role="combobox"
+                    :aria-expanded="showGroupDropdown"
+                  />
+                  <div v-if="showGroupDropdown && filteredGroups.length" class="group-dropdown" role="listbox">
+                    <div
+                      v-for="(group, idx) in filteredGroups"
+                      :key="group.name"
+                      class="group-item"
+                      :class="{ highlighted: idx === highlightedIndex }"
+                      @mousedown.prevent="selectGroupFromSearch(group)"
+                      role="option"
+                      :aria-selected="form.group_name === group.name"
+                    >
+                      <div class="group-item-left">📁 {{ group.name }}</div>
+                      <div class="group-item-right">{{ group.monitorsCount }} monitors</div>
+                    </div>
+                  </div>
+                  <input type="hidden" v-model="form.group_name" />
+                </div>
                 
                 <!-- New Group Input -->
                 <input
@@ -302,61 +322,77 @@
         <div class="form-section">
           <h3>🔔 Notification Channels</h3>
           <p class="form-text">Select channels to receive alerts when this monitor goes down</p>
-          
-          <div v-if="loadingChannels" class="loading-state">
-            <span>Loading notification channels...</span>
+
+          <div class="form-group">
+            <label class="checkbox-label">
+              <input type="checkbox" v-model="form.notifications_enabled" class="form-checkbox">
+              Enable notifications for this monitor
+            </label>
           </div>
-          
-          <div v-else-if="availableChannels.length === 0" class="no-channels-state">
-            <span>📭 No notification channels configured yet.</span>
-            <router-link to="/notifications" class="btn btn-sm btn-primary">
-              Create Notification Channel
-            </router-link>
-          </div>
-          
-          <div v-else class="channels-selection">
-            <div 
-              v-for="channel in availableChannels" 
-              :key="channel.id"
-              class="channel-option"
-            >
-              <label class="checkbox-label">
-                <input
-                  type="checkbox"
-                  :value="channel.id"
-                  v-model="form.notification_channels"
-                  class="form-checkbox"
-                >
-                <div class="channel-info">
-                  <div class="channel-header">
-                    <span class="channel-name">{{ channel.name }}</span>
-                    <span class="channel-badge" :class="`badge-${channel.type}`">
-                      {{ channel.type.toUpperCase() }}
-                    </span>
-                  </div>
-                  <div class="channel-details">
-                    <span v-if="channel.type === 'telegram'">
-                      📱 Telegram: {{ maskChatId(channel.config?.chat_id) }}
-                    </span>
-                    <span v-else-if="channel.type === 'discord'">
-                      💬 Discord Webhook
-                    </span>
-                    <span v-else-if="channel.type === 'slack'">
-                      💼 Slack: {{ channel.config?.channel || 'Default channel' }}
-                    </span>
-                    <span v-else-if="channel.type === 'webhook'">
-                      🔗 Webhook: {{ channel.config?.method || 'POST' }}
-                    </span>
-                  </div>
-                </div>
-              </label>
+
+          <template v-if="form.notifications_enabled">
+            <div v-if="loadingChannels" class="loading-state">
+              <span>Loading notification channels...</span>
             </div>
-          </div>
-          
-          <small class="form-text">
-            Selected {{ form.notification_channels.length }} channel(s). 
-            Alerts will be sent after {{ form.notify_after_retries }} failed check(s).
-          </small>
+
+            <div v-else-if="availableChannels.length === 0" class="no-channels-state">
+              <div class="no-channels-left">
+                <span class="no-channels-emoji">📭</span>
+                <div class="no-channels-text">No notification channels available (none configured or all disabled).</div>
+              </div>
+              <router-link to="/notifications" class="btn manage-notifications-btn" aria-label="Manage Notification Channels">
+                Manage Notification Channels
+              </router-link>
+            </div>
+
+            <div v-else class="channels-selection">
+              <div 
+                v-for="channel in availableChannels" 
+                :key="channel.id"
+                class="channel-option"
+              >
+                <label class="checkbox-label">
+                  <input
+                    type="checkbox"
+                    :value="channel.id"
+                    v-model="form.notification_channels"
+                    class="form-checkbox"
+                  >
+                  <div class="channel-info">
+                    <div class="channel-header">
+                      <span class="channel-name">{{ channel.name }}</span>
+                      <span class="channel-badge" :class="`badge-${channel.type}`">
+                        {{ channel.type.toUpperCase() }}
+                      </span>
+                    </div>
+                    <div class="channel-details">
+                      <span v-if="channel.type === 'telegram'">
+                        📱 Telegram: {{ maskChatId(channel.config?.chat_id) }}
+                      </span>
+                      <span v-else-if="channel.type === 'discord'">
+                        💬 Discord Webhook
+                      </span>
+                      <span v-else-if="channel.type === 'slack'">
+                        💼 Slack: {{ channel.config?.channel || 'Default channel' }}
+                      </span>
+                      <span v-else-if="channel.type === 'webhook'">
+                        🔗 Webhook: {{ channel.config?.method || 'POST' }}
+                      </span>
+                    </div>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <small class="form-text">
+              Selected {{ form.notification_channels.length }} channel(s). 
+              Alerts will be sent after {{ form.notify_after_retries }} failed check(s).
+            </small>
+          </template>
+
+          <template v-else>
+            <small class="form-text">Notifications are disabled for this monitor.</small>
+          </template>
         </div>
 
         <!-- Enable/Disable -->
@@ -393,7 +429,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed, watch, nextTick } from 'vue'
 import { useMonitorStore } from '../stores/monitors'
 import { useRouter } from 'vue-router'
 import api from '../services/api'
@@ -412,6 +448,17 @@ const loadingGroups = ref(false)
 const loadingChannels = ref(false)
 const availableChannels = ref([])
 
+// Searchable group selector state
+const groupSearch = ref('')
+const showGroupDropdown = ref(false)
+const highlightedIndex = ref(-1)
+
+const filteredGroups = computed(() => {
+  const q = (groupSearch.value || '').toLowerCase().trim()
+  if (!q) return groupsWithInfo.value || []
+  return (groupsWithInfo.value || []).filter(g => (g.name || '').toLowerCase().includes(q))
+})
+
 const form = reactive({
   name: '',
   type: '',
@@ -424,6 +471,7 @@ const form = reactive({
   retries: 3,
   notify_after_retries: 2,
   notification_channels: [],
+  notifications_enabled: true,
   enabled: true
 })
 
@@ -444,7 +492,57 @@ async function loadNotificationChannels() {
   try {
     const response = await api.notificationChannels.getAll()
     if (response.data.success) {
-      availableChannels.value = response.data.data.data || response.data.data || []
+      // Filter out channels that are globally disabled on the Notification settings page.
+      // Be defensive: different API versions may use different flag names (enabled, is_enabled, disabled, isActive, status, state, deleted, etc.).
+      const raw = response.data.data?.data || response.data.data || []
+      availableChannels.value = (raw || []).filter(ch => {
+        if (!ch) return false
+
+        // Exclude if explicit deleted flags present
+        if (ch.deleted === true) return false
+        if (ch.deleted_at) return false
+
+        // Common explicit disabling flags (treat true as disabled for these):
+        const disabledChecks = [
+          ch.disabled === true,
+          ch.is_disabled === true,
+          ch.isDisabled === true,
+          // some APIs use status/state strings
+          typeof ch.status === 'string' && /disable|disabled|off|inactive/i.test(ch.status),
+          typeof ch.state === 'string' && /disable|disabled|off|inactive/i.test(ch.state),
+          // numeric 0/"0" may indicate disabled
+          ch.status === 0,
+          ch.status === '0'
+        ]
+        if (disabledChecks.some(Boolean)) return false
+
+        // Also consider active/enabled flags (require true to keep)
+        const enabledChecks = [
+          ch.enabled === true,
+          ch.is_enabled === true,
+          ch.isEnabled === true,
+          ch.active === true,
+          ch.is_active === true,
+          ch.isActive === true
+        ]
+        if (enabledChecks.some(Boolean)) return true
+
+        // If there are explicit boolean flags that are false for enabled/active, exclude
+        const explicitFalse = [
+          ch.enabled === false,
+          ch.is_enabled === false,
+          ch.active === false,
+          ch.is_active === false
+        ]
+        if (explicitFalse.some(Boolean)) return false
+
+        // Fallback: if the object contains a visible UI label like 'DISABLED' in a `status_label` or `label`, try to detect it
+        if (typeof ch.status_label === 'string' && /disable|disabled|off|inactive/i.test(ch.status_label)) return false
+        if (typeof ch.label === 'string' && /disable|disabled|off|inactive/i.test(ch.label)) return false
+
+        // Otherwise assume available
+        return true
+      })
     }
   } catch (err) {
     console.error('Failed to load notification channels:', err)
@@ -494,6 +592,39 @@ async function loadExistingGroups() {
   } finally {
     loadingGroups.value = false
   }
+}
+
+watch(selectedGroupType, (v) => {
+  if (v === 'existing') {
+    groupSearch.value = form.group_name || ''
+    // small delay to avoid UI flicker
+    nextTick(() => { showGroupDropdown.value = !!filteredGroups.value.length })
+  } else {
+    showGroupDropdown.value = false
+  }
+})
+
+function onGroupSearchInput() {
+  showGroupDropdown.value = true
+  highlightedIndex.value = 0
+}
+
+function selectGroupFromSearch(group) {
+  form.group_name = group.name
+  selectedGroupInfo.value = groupsWithInfo.value.find(g => g.name === group.name) || null
+  groupSearch.value = group.name
+  showGroupDropdown.value = false
+}
+
+function focusNextGroup() {
+  if (highlightedIndex.value < filteredGroups.value.length - 1) highlightedIndex.value++
+}
+function focusPrevGroup() {
+  if (highlightedIndex.value > 0) highlightedIndex.value--
+}
+function selectHighlightedGroup() {
+  const g = filteredGroups.value[highlightedIndex.value]
+  if (g) selectGroupFromSearch(g)
 }
 
 function onTypeChange() {
@@ -646,6 +777,11 @@ async function handleSubmit() {
       monitorData.group_name = ''
       monitorData.group_description = ''
     }
+
+    // If notifications disabled for this monitor, ensure channels cleared
+    if (!form.notifications_enabled) {
+      monitorData.notification_channels = []
+    }
     
     // Add config if applicable
     const configData = {}
@@ -734,581 +870,258 @@ async function handleSubmit() {
 </script>
 
 <style scoped>
+/* Modern, simple color palette and refined spacing */
 .create-monitor {
-  padding: 20px;
+  --bg: #f6f9fc;
+  --card: #ffffff;
+  --muted: #6b7a86;
+  --accent: #2563eb; /* blue */
+  --accent-2: #7c3aed; /* purple */
+  --border: #e6eef7;
+  --danger: #e04545;
+  padding: 26px;
+  max-width: 1100px;
+  margin: 28px auto 0;
+  box-sizing: border-box;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  background: transparent;
 }
 
 .page-header {
-  margin-bottom: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 14px;
+  padding: 8px 6px;
+  position: relative;
 }
 
-.page-header h1 {
-  margin: 0 0 5px 0;
-  color: #2c3e50;
+.header-content { display:flex; gap:12px; align-items:center; margin: 0; padding: 0; }
+.header-main { padding: 8px 16px; }
+.header-actions { display:flex; align-items:center; position: absolute; right:12px; top:12px; }
+.header-main h1 { margin:0 0 4px 0; color: #0f1724; font-size:1.45rem; }
+.header-main p { margin:0; color: var(--muted); font-size:0.95rem }
+
+.progress-indicator { display:flex; gap:12px; align-items:center; margin-left:auto; padding: 0 6px; }
+.progress-step { display:flex; flex-direction:column; align-items:center; gap:6px; min-width:70px }
+.step-number {
+  width:36px; height:36px; border-radius:999px; display:flex; align-items:center; justify-content:center; font-weight:700; color:var(--accent); background:rgba(37,99,235,0.08);
+}
+.progress-step.active .step-number { background: linear-gradient(90deg,var(--accent),var(--accent-2)); color:white; box-shadow:0 8px 20px rgba(37,99,235,0.12) }
+.step-label { font-size:0.78rem; color:var(--muted); text-align:center }
+.progress-step { display:flex; flex-direction:column; align-items:center; gap:6px; min-width:60px }
+.step-number {
+  width:32px; height:32px; border-radius:999px; display:flex; align-items:center; justify-content:center; font-weight:700; color:var(--accent); background:rgba(37,99,235,0.08); font-size:0.92rem
+}
+.progress-line { flex:1; height:6px; background:var(--border); border-radius:6px }
+.progress-line.active { background: linear-gradient(90deg,var(--accent),var(--accent-2)) }
+
+/* Card-like form container */
+.form-container {
+  background: var(--card);
+  border-radius: 14px;
+  margin-top: 18px; /* breathing space between header and form */
+  box-shadow: 0 14px 40px rgba(15,23,36,0.08);
+  border: 1px solid var(--border);
+  padding: 22px;
+  transition: none;
 }
 
-.page-header p {
-  margin: 0;
-  color: #7f8c8d;
-}
-
-.monitor-form {
-  padding: 30px;
+/* small visual header inside the form */
+.form-container::before {
+  content: '';
+  display:block;
+  height:6px;
+  border-radius:8px;
+  background: linear-gradient(90deg, rgba(37,99,235,0.12), rgba(124,58,237,0.12));
+  margin:-18px 22px 12px 22px;
 }
 
 .form-section {
-  margin-bottom: 30px;
-  padding-bottom: 20px;
-  border-bottom: 1px solid #ecf0f1;
+  margin-bottom:16px;
+  padding:16px;
+  background: #fbfdff;
+  border-radius:10px;
+  border: 1px solid rgba(230,238,247,0.9);
+  box-shadow: 0 6px 18px rgba(15,23,36,0.03);
 }
 
-.form-section:last-of-type {
-  border-bottom: none;
-}
+.form-section + .form-section { margin-top:12px }
 
 .form-section h3 {
-  margin: 0 0 20px 0;
-  color: #2c3e50;
-  font-size: 1.2em;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin:0 0 10px 0;
+  font-size:1.03rem;
+  color:#07122a;
 }
 
-.form-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 20px;
-}
+.form-section .form-row { margin-top:8px }
+.form-group { margin-bottom:10px }
 
-.form-group {
-  margin-bottom: 20px;
-}
-
-.form-text {
-  color: #6c757d;
-  font-size: 0.85em;
-  margin-top: 5px;
-  display: block;
-}
-
-.form-help {
-  color: #6c757d;
-  font-size: 0.75em;
-  margin-top: 5px;
-  display: block;
-  font-style: italic;
-}
-
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-  font-weight: normal;
-}
-
-.form-checkbox {
-  width: auto !important;
-  margin: 0;
-}
-
-.form-actions {
-  display: flex;
-  gap: 15px;
-  justify-content: flex-end;
-  padding-top: 20px;
-  border-top: 1px solid #de2121;
-  margin-top: 30px;
-}
-
-/* Center button text (icon + label) inside action buttons */
-.form-actions .btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* Style Cancel button as red outline with red text to match primary action */
-.form-actions .btn-secondary {
-  background: transparent;
-  color: #e74c3c;
-  border: 1.5px solid #e74c3c;
-}
-.form-actions .btn-secondary:hover {
-  background: rgba(231, 76, 60, 0.06);
-}
-
-/* Group Selector Styles */
-.group-selector {
-  margin-bottom: 20px;
-}
-
-.group-type-options {
-  display: flex;
-  gap: 15px;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
-}
-
-.group-type-option {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 15px;
-  border: 2px solid #e1e8ed;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  font-weight: 500;
-  background: white;
-}
-
-.group-type-option:hover {
-  border-color: #667eea;
-  background: #f8f9ff;
-}
-
-.group-type-option.active {
-  border-color: #667eea;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-}
-
-.group-type-option input[type="radio"] {
-  margin: 0;
-  width: auto;
-}
-
-.existing-group-selector {
-  margin-bottom: 20px;
-}
-
-.existing-group-options {
-  max-height: 200px;
-  overflow-y: auto;
-  border: 1px solid #e1e8ed;
-  border-radius: 8px;
-  background: white;
-}
-
-.existing-group-option {
-  padding: 12px 15px;
-  border-bottom: 1px solid #f1f3f4;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-}
-
-.existing-group-option:last-child {
-  border-bottom: none;
-}
-
-.existing-group-option:hover {
-  background: #f8f9ff;
-}
-
-.existing-group-option.selected {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-}
-
-.group-option-name {
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-
-.group-option-stats {
-  font-size: 0.85em;
-  color: #6c757d;
-  display: flex;
-  gap: 15px;
-  flex-wrap: wrap;
-}
-
-.existing-group-option.selected .group-option-stats {
-  color: rgba(255, 255, 255, 0.8);
-}
-
-.group-stat {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.group-stat-icon {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-}
-
-.stat-total {
-  background: #3498db;
-}
-
-.stat-up {
-  background: #27ae60;
-}
-
-.stat-down {
-  background: #e74c3c;
-}
-
-.stat-pending {
-  background: #f39c12;
-}
-
-.group-info-panel {
-  background: linear-gradient(135deg, #f8f9ff 0%, #e8f0fe 100%);
-  border: 1px solid #e1e8ed;
-  border-radius: 8px;
-  padding: 15px;
-  margin-top: 15px;
-}
-
-.group-info-title {
-  font-weight: 600;
-  color: #2c3e50;
-  margin-bottom: 10px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.group-info-title::before {
-  content: "📊";
-  font-size: 16px;
-}
-
-.group-stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.group-stat-item {
-  text-align: center;
-  padding: 8px;
-  background: white;
-  border-radius: 6px;
-  border: 1px solid #e1e8ed;
-}
-
-.group-stat-value {
-  font-size: 1.2em;
-  font-weight: bold;
-  color: #2c3e50;
-}
-
-.group-stat-label {
-  font-size: 0.75em;
-  color: #6c757d;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.group-description {
-  color: #5a6c7d;
-  font-size: 0.9em;
-  font-style: italic;
-}
-
-.loading-spinner {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  color: #6c757d;
-  font-size: 0.9em;
-}
-
-.loading-spinner::before {
-  content: "⏳";
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-.no-groups-message {
-  text-align: center;
-  padding: 20px;
-  color: #6c757d;
-  font-style: italic;
-}
-
-.no-groups-message::before {
-  content: "📝";
-  display: block;
-  font-size: 2em;
-  margin-bottom: 10px;
-}
-
-/* Responsive Design */
-@media (max-width: 1024px) {
-  .progress-indicator {
-    padding: 1rem;
-  }
-  
-  .step-label {
-    font-size: 0.875rem;
-  }
-}
-
-@media (max-width: 768px) {
-  .create-monitor {
-    padding: 1rem;
-    padding-top: 5rem;
-  }
-  
-  .page-header {
-    padding: 1.25rem;
-  }
-  
-  .header-content {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 1rem;
-  }
-  
-  .header-main {
-    text-align: center;
-  }
-  
-  .header-main h1 {
-    font-size: 1.5rem;
-  }
-  
-  .header-main p {
-    font-size: 0.9rem;
-  }
-  
-  .header-actions {
-    width: 100%;
-  }
-  
-  .header-actions .btn {
-    width: 100%;
-    justify-content: center;
-  }
-  
-  .progress-indicator {
-    flex-direction: column;
-    padding: 1rem;
-    gap: 0.75rem;
-  }
-  
-  .progress-step {
-    width: 100%;
-  }
-  
-  .progress-line {
-    display: none;
-  }
-  
-  .form-container {
-    padding: 1.25rem;
-  }
-  
-  .form-row {
-    grid-template-columns: 1fr;
-  }
-  
-  .form-section h3 {
-    font-size: 1.125rem;
-  }
-  
-  .form-actions {
-    flex-direction: column-reverse;
-    gap: 0.75rem;
-  }
-  
-  .form-actions .btn {
-    width: 100%;
-  }
-  
-  .group-type-options {
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-  
-  .group-stats-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.75rem;
-  }
-  
-  .channel-option {
-    padding: 1rem;
-  }
-}
-
-@media (max-width: 480px) {
-  .create-monitor {
-    padding: 0.75rem;
-  }
-  
-  .page-header {
-    padding: 1rem;
-  }
-  
-  .header-main h1 {
-    font-size: 1.25rem;
-  }
-  
-  .progress-indicator {
-    padding: 0.75rem;
-  }
-  
-  .step-number {
-    width: 1.75rem;
-    height: 1.75rem;
-    font-size: 0.875rem;
-  }
-  
-  .step-label {
-    font-size: 0.75rem;
-  }
-  
-  .form-container {
-    padding: 1rem;
-  }
-  
-  .form-section {
-    margin-bottom: 1.5rem;
-  }
-  
-  .form-section h3 {
-    font-size: 1rem;
-  }
-  
-  .form-group {
-    margin-bottom: 0.875rem;
-  }
-  
-  .form-label {
-    font-size: 0.875rem;
-  }
-  
-  .form-control {
-    font-size: 0.875rem;
-    padding: 0.5rem 0.75rem;
-  }
-  
-  .group-stats-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .group-stat {
-    padding: 0.75rem;
-  }
-  
-  .channel-option {
-    padding: 0.875rem;
-  }
-  
-  .channel-header {
-    flex-wrap: wrap;
-  }
-  
-  .channel-name {
-    font-size: 0.9rem;
-  }
-  
-  .error-message {
-    padding: 0.875rem;
-    font-size: 0.875rem;
-  }
-}
-
-/* Notification Channels Styling */
-.channels-selection {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-bottom: 15px;
-}
-
+/* Channel option improvements */
 .channel-option {
-  border: 2px solid #e1e8ed;
-  border-radius: 8px;
-  padding: 15px;
-  background: white;
-  transition: all 0.2s ease;
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:14px;
+  background:#ffffff;
+  transition: none;
+  display:flex;
+  gap:12px;
+  align-items:flex-start;
 }
+.channel-option:hover { box-shadow: 0 10px 30px rgba(15,23,36,0.06) }
+.checkbox-label { display:flex; gap:12px; align-items:flex-start; width:100%; cursor:pointer }
+.form-checkbox { margin-top:6px; width:18px; height:18px }
+.channel-info { flex:1 }
 
-.channel-option:hover {
-  border-color: #667eea;
-  background: #f8f9ff;
+.form-row { display:grid; grid-template-columns:repeat(2,1fr); gap:14px }
+.form-label { display:block; margin-bottom:6px; color:#223344; font-weight:600 }
+
+.form-control { width:100%; padding:11px 12px; border:1px solid var(--border); border-radius:10px; background:#fbfdff; transition:box-shadow .12s ease,border-color .12s ease; font-size:0.95rem; color:#0f1724 }
+.form-control::placeholder { color:#9aa6b2 }
+.form-control:focus { outline: none; border-color: rgba(37,99,235,0.9); box-shadow: 0 6px 20px rgba(37,99,235,0.06) }
+
+/* Ensure native select popups appear above layout on small screens */
+select.form-control {
+  position: relative;
+  z-index: 60;
+  -webkit-appearance: menulist-button;
+  appearance: auto;
 }
+select.form-control:focus { z-index: 80 }
 
-.channel-option input[type="checkbox"]:checked + .channel-info {
-  color: #667eea;
-}
+.form-text, .form-help { color:var(--muted); font-size:0.86rem; margin-top:6px }
 
-.channel-info {
-  margin-left: 8px;
-  flex: 1;
-}
+.form-actions { display:flex; gap:12px; justify-content:flex-end; padding-top:16px }
+.btn { font-weight:700; border-radius:10px; padding:9px 14px; cursor:pointer; border:1px solid transparent }
+.btn:disabled { opacity:.6; cursor:not-allowed }
+.btn-secondary { background:transparent; color:#334155; border:1px solid #dbe7f5 }
+.btn-secondary:hover { background:#f8fafc }
+.btn-success { color:white; background: linear-gradient(90deg,var(--accent),var(--accent-2)); box-shadow:0 8px 20px rgba(124,58,237,0.12); border:none }
 
-.channel-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 5px;
-}
+.error-message { background:#fff5f5; color:var(--danger); padding:10px 12px; border-radius:8px; border:1px solid rgba(224,69,69,0.12); margin-bottom:12px }
 
-.channel-name {
-  font-size: 1em;
-  color: #2c3e50;
-}
-
-.channel-badge {
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 0.7em;
-  font-weight: bold;
-}
-
-.badge-telegram {
-  background: #e3f2fd;
-  color: #1976d2;
-}
-
-.badge-discord {
-  background: #f6e7e7;
-  color: #5e35b1;
-}
-
-.badge-slack {
-  background: #e8f5e8;
-  color: #388e3c;
-}
-
-.badge-webhook {
-  background: #fff3e0;
-  color: #f57c00;
-}
-
-.channel-details {
-  font-size: 0.85em;
-  color: #7f8c8d;
-}
-
-.loading-state,
-.no-channels-state {
-  text-align: center;
-  padding: 30px;
-  background: #f8f9fa;
-  border-radius: 8px;
-  color: #7f8c8d;
-}
-
-.no-channels-state {
+.group-input-container {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 15px;
+  gap: 8px;
 }
 
-.no-channels-state .btn {
-  margin-top: 10px;
+.group-selector {
+  margin-bottom: 0;
+  min-width: 160px;
+  max-width: 360px;
+  flex: 0 0 auto;
 }
+
+.group-input-container > .form-control:not(.group-selector) {
+  flex: 1 1 auto;
+}
+
+@media (min-width: 900px) {
+  .group-input-container {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+  }
+}
+
+.existing-group-options { max-height:220px; overflow:auto; border-radius:8px }
+
+.group-info { margin-top:6px; color: var(--muted); font-size:0.92rem }
+
+/* Searchable group dropdown styles */
+.group-search-wrapper { position: relative; width:100%; max-width:720px }
+.group-search { padding:8px 10px }
+.group-dropdown { position:absolute; top:100%; left:0; right:0; background: #ffffff; border:1px solid var(--border); box-shadow: 0 10px 30px rgba(15,23,36,0.06); max-height:220px; overflow:auto; z-index:1100; border-radius:8px; margin-top:8px }
+.group-item { display:flex; justify-content:space-between; gap:12px; padding:8px 12px; cursor:pointer }
+.group-item:hover, .group-item.highlighted { background: rgba(37,99,235,0.06) }
+.group-item-left { font-weight:600 }
+.group-item-right { color:var(--muted); font-size:0.92rem }
+
+.channel-option { border:1px solid var(--border); border-radius:10px; padding:12px; background:transparent }
+.channel-header { display:flex; gap:8px; align-items:center }
+.channel-badge { padding:3px 8px; border-radius:8px; font-size:0.72rem; font-weight:700 }
+.badge-telegram { background:#eaf6ff; color:#0b79d0 }
+.badge-discord { background:#f5eefb; color:#6d28d9 }
+.badge-slack { background:#eefaf1; color:#0f9d58 }
+.badge-webhook { background:#fff8eb; color:#c76b00 }
+
+/* Further visual refinements */
+.channel-badge { text-transform:uppercase; letter-spacing:0.4px; padding:4px 10px; font-size:0.70rem; font-weight:800 }
+.form-control:focus-visible { outline: 3px solid rgba(37,99,235,0.12); outline-offset: 2px }
+.form-control:focus { box-shadow: 0 10px 30px rgba(37,99,235,0.08) }
+.btn-secondary { padding:8px 12px; border-radius:10px; font-size:0.95rem }
+.btn-success { padding:10px 18px; border-radius:12px }
+.form-section { transition: none; overflow: visible }
+
+/* Only apply lift (transform) on hover-capable devices (desktop) to avoid creating stacking contexts that break native select popups on mobile */
+@media (hover: hover) and (min-width: 900px) {
+  .form-section:hover { box-shadow: 0 18px 40px rgba(15,23,36,0.06) }
+  .channel-option { transition: none }
+  .channel-option:hover { box-shadow: 0 18px 40px rgba(15,23,36,0.06) }
+}
+@media (max-width: 899px) {
+  .channel-option:hover { box-shadow: 0 10px 24px rgba(15,23,36,0.04) }
+}
+.form-checkbox { accent-color: var(--accent); }
+
+.progress-step .step-label { color: #5b6b75 }
+.progress-step.active .step-label { color: var(--accent-2) }
+
+/* Responsive */
+@media (max-width: 900px) {
+  .form-row { grid-template-columns:1fr }
+  .progress-indicator { display:none }
+  .create-monitor { padding: 18px; }
+  .page-header { padding: 12px 8px; }
+  .form-container { padding:18px }
+}
+@media (max-width: 480px) {
+  .page-header { flex-direction:column; align-items:flex-start; gap:10px; padding:12px }
+  .header-actions { position: static; margin-top:6px; width:100%; display:flex; justify-content:flex-end }
+  .header-main h1 { font-size:1.18rem }
+  .create-monitor { padding: 12px }
+  /* Reduce unused bottom space and expand form to use viewport height */
+  .form-container { padding:14px; margin-top:8px; padding-bottom:28px; min-height: calc(100vh - 160px); }
+  .form-section { padding:12px }
+  .form-row { gap:10px }
+  .form-control { padding:10px 10px }
+  .btn { width:100%; display:inline-flex; align-items:center; justify-content:center; text-align:center }
+  .form-actions { flex-direction:column-reverse }
+  /* keep actions visible on mobile when form is long */
+  .form-actions { position: sticky; bottom: 10px; left: 10px; right: 10px; padding:10px; background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,255,255,0.95)); border-radius:10px; gap:8px; z-index:60 }
+  .btn-success { min-width:140px }
+}
+
+/* Manage Notification button and no-channels layout */
+.no-channels-state {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+}
+.no-channels-left { display:flex; align-items:center; gap:12px; flex:1 }
+.no-channels-emoji { font-size:1.18rem }
+.no-channels-text { color:var(--muted); font-size:0.95rem }
+.manage-notifications-btn {
+  background: linear-gradient(90deg,var(--accent),var(--accent-2));
+  color: #fff;
+  padding:10px 16px;
+  border-radius:10px;
+  text-decoration:none;
+  box-shadow: 0 8px 20px rgba(37,99,235,0.12);
+  border: none;
+  font-weight:700;
+}
+.manage-notifications-btn:hover { opacity:0.95 }
+
+@media (max-width: 600px) {
+  .no-channels-state { flex-direction:column; align-items:flex-start }
+  .manage-notifications-btn { width:100%; display:inline-flex; justify-content:center }
+}
+
 </style>

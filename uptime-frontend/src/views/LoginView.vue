@@ -56,14 +56,23 @@
                 Password
               </label>
               <div class="input-wrapper">
-                <input
-                  id="password"
-                  v-model="form.password"
-                  type="password"
-                  class="form-control"
-                  required
-                  placeholder="Enter your password"
-                >
+                    <input
+                      id="password"
+                      v-model="form.password"
+                      :type="showPassword ? 'text' : 'password'"
+                      class="form-control"
+                      required
+                      placeholder="Enter your password"
+                    >
+                    <button
+                      type="button"
+                      class="password-toggle"
+                      @click="togglePassword"
+                      :aria-pressed="showPassword"
+                      :title="showPassword ? 'Hide password' : 'Show password'"
+                    >
+                      <i :class="showPassword ? 'fas fa-eye-slash' : 'fas fa-eye'"></i>
+                    </button>
               </div>
             </div>
             
@@ -124,6 +133,12 @@ const form = ref({
   email: '',
   password: ''
 })
+
+const showPassword = ref(false)
+
+function togglePassword() {
+  showPassword.value = !showPassword.value
+}
 
 async function handleLogin() {
   const result = await authStore.login(form.value)
@@ -278,53 +293,64 @@ html, body {
 .logo-icon {
   width: 90px;
   height: 90px;
-  background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
+      padding: 1.2rem;
   border-radius: 25px;
   text-align: center;
   display: flex;
-  align-items: center;
+      padding: 1.75rem 1.25rem 1.5rem 1.25rem;
   justify-content: center;
   margin: 0 auto;
-  box-shadow: 
-    0 20px 40px rgba(116, 185, 255, 0.4),
-    0 0 0 1px rgba(255, 255, 255, 0.1),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
-  animation: logoFloat 4s ease-in-out infinite;
-  position: relative;
-  overflow: hidden;
-}
+    .login-body {
+      padding: 0 1.25rem 1.75rem 1.25rem; /* sedikit lebih ruang bawah untuk tombol */
+    }
+  
+    .login-footer {
+      padding: 1.25rem 1.25rem 1.75rem 1.25rem;
+    }
+  
+    .login-header h1 {
+      font-size: 1.6rem;
+    }
+  
+    .subtitle-wrapper p {
+      font-size: 0.9rem;
+    }
+  
+    .logo-icon {
+      width: 72px;
+      height: 72px;
+      margin-bottom: 1.25rem;
+    }
+  
+    .logo-icon i {
+      font-size: 1.6rem;
+    }
+  
+    .form-label {
+      font-size: 0.95rem;
+    }
+  
+    .form-control {
+      padding: 0.9rem 1rem;
+      font-size: 0.95rem;
+      border-radius: 12px;
+    }
+  
+    .btn-primary {
+      padding: 1rem 1.25rem;
+      font-size: 1rem;
+      min-height: 52px;
+      border-radius: 14px;
+    }
 
-.logo-icon::before {
-  content: '';
-  position: absolute;
-  top: -2px;
-  left: -2px;
-  right: -2px;
-  bottom: -2px;
-  background: linear-gradient(45deg, #74b9ff, #00cec9, #fd79a8, #fdcb6e);
-  border-radius: 27px;
-  z-index: -1;
-  animation: borderRotate 3s linear infinite;
-}
+    .form-group {
+      margin-bottom: 1rem;
+    }
 
-.logo-icon i {
-  font-size: 2.5rem;
-  color: white;
-  animation: iconPulse 2.5s ease-in-out infinite;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
-}
-
-.logo-dots {
-  position: absolute;
-  top: -15px;
-  right: -15px;
-  display: flex;
-  gap: 4px;
-}
-
-.dot {
-  width: 8px;
-  height: 8px;
+    /* beri sedikit margin agar card tidak menempel di pinggir layar */
+    .login-card {
+      margin: 8px;
+    }
   border-radius: 50%;
   animation: dotPulse 2s ease-in-out infinite;
 }
@@ -518,7 +544,7 @@ html, body {
 
 /* Body section */
 .login-body {
-  padding: 0 30px 20px 30px;
+  padding: 0 30px 28px 30px; /* increased bottom padding for spacing above button */
 }
 
 /* Error message styling */
@@ -544,7 +570,7 @@ html, body {
 .login-form {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 2px;
 }
 
 .form-group {
@@ -569,6 +595,32 @@ html, body {
 
 .input-wrapper {
   position: relative;
+}
+
+.input-wrapper .form-control {
+  padding-right: 56px; /* reserve space for toggle */
+}
+
+.password-toggle {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: rgba(255,255,255,0.95);
+  font-size: 1rem;
+  padding: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.password-toggle:focus {
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(116,185,255,0.12);
+  border-radius: 6px;
 }
 
 .form-control {
@@ -605,9 +657,10 @@ html, body {
   background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
   border: none;
   color: white;
-  padding: 16px 24px;
+  padding: clamp(10px, 1.2vw, 16px) clamp(12px, 2.0vw, 24px);
   border-radius: 12px;
-  font-size: 1rem;
+  font-size: clamp(0.95rem, 1.2vw, 1.05rem);
+  min-height: 44px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
@@ -686,7 +739,7 @@ html, body {
 
 .btn-full {
   width: 100%;
-  margin-top: 15px;
+  margin-top: 20px; /* slightly larger gap to separate form from button */
 }
 
 /* Enhanced animations */
@@ -995,7 +1048,7 @@ html, body {
   }
   
   .login-body {
-    padding: 0 1.5rem 1.25rem 1.5rem;
+    padding: 0 1.5rem 1.75rem 1.5rem; /* increased bottom padding on tablet */
   }
   
   .login-footer {
@@ -1042,7 +1095,7 @@ html, body {
   }
   
   .login-body {
-    padding: 0 1.25rem 1rem 1.25rem;
+    padding: 0 1.25rem 1.25rem 1.25rem; /* increased bottom padding on small screens */
   }
   
   .login-footer {
@@ -1077,8 +1130,9 @@ html, body {
   }
   
   .btn-primary {
-    padding: 0.75rem 1.5rem;
+    padding: 0.85rem 1.25rem;
     font-size: 0.95rem;
+    min-height: 48px;
   }
   
   .account-item {

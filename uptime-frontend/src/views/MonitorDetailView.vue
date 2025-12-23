@@ -59,9 +59,9 @@
         >
           {{ isPaused ? '▶️ Resume' : '⏸️ Pause' }}
         </button>
-        <router-link :to="`/logs/monitor/${$route.params.id}`" class="btn btn-info">
+        <!-- <router-link :to="`/logs/monitor/${$route.params.id}`" class="btn btn-info">
           📋 View Logs
-        </router-link>
+        </router-link> -->
         <router-link :to="`/monitors/${$route.params.id}/edit`" class="btn btn-primary">
           ⚙️ Edit
         </router-link>
@@ -1464,8 +1464,9 @@ function formatDateTime(dateString) {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  /* gap: 16px; */
   margin-bottom: 24px;
-  padding: 20px 24px;
+  padding: 24px 24px;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 16px;
@@ -1484,6 +1485,39 @@ function formatDateTime(dateString) {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+/* Constrain monitor title so it doesn't stretch the header */
+.monitor-title {
+  flex: 1 1 auto;
+  /* keep title proportional — narrower on wide screens so actions stay visible */
+  max-width: 560px; /* reduced from 720px */
+  min-width: 0; /* allow truncation */
+  padding-right: 8px;
+  box-sizing: border-box;
+}
+
+.monitor-title h1 {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Responsive, proportional sizing */
+  font-size: clamp(1.2rem, 1.6vw + 0.6rem, 1.6rem);
+}
+
+.header-actions {
+  flex: 0 0 auto; /* keep actions from stretching */
+}
+
+@media (max-width: 768px) {
+  .monitor-title {
+    max-width: 100%;
+    padding-right: 0;
+  }
+  .monitor-title h1 {
+    white-space: normal;
+    font-size: 1.2rem;
+  }
 }
 
 .live-badge {
@@ -1594,26 +1628,55 @@ function formatDateTime(dateString) {
 }
 
 .monitor-status-section {
-  text-align: right;
+  /* Make status area horizontal and constrained so the status badge isn't stretched full-width */
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
 }
 
 .current-status {
   font-size: 1rem;
   font-weight: 700;
-  padding: 8px 16px;
+  padding: 8px 14px;
   border-radius: 8px;
   margin-bottom: 8px;
   letter-spacing: 0.5px;
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   border: 1px solid rgba(255, 255, 255, 0.2);
-  min-width: 80px;
+  min-width: 0;
   text-align: center;
+  /* Constrain width so the pill appears proportional and doesn't span the whole header */
+  max-width: 420px;
+  width: auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .current-status.status-up {
   background: #00b894;
   color: white;
+}
+
+/* Narrow padding for status badges so they don't appear overly wide */
+.current-status.status-up,
+.current-status.status-down,
+.current-status.status-invalid,
+.current-status.status-validating,
+.current-status.status-unknown {
+  padding: 6px 10px;
+  min-width: 0;
+  width: auto;
+}
+
+/* Reduce padding for UP status so badge isn't overly wide */
+.current-status.status-up {
+  padding: 6px 10px; /* narrower horizontal padding */
+  min-width: 0;       /* allow natural width */
+  width: auto;
 }
 
 .current-status.status-down {
@@ -1655,31 +1718,45 @@ function formatDateTime(dateString) {
   margin-bottom: 24px;
 }
 
+.stat-card,
+.stat-card:active,
+.stat-card:focus {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  background-color: inherit !important;
+  color: inherit !important;
+}
+
 .stat-card {
-  background: linear-gradient(135deg, rgba(45, 52, 54, 0.95) 0%, rgba(99, 110, 114, 0.85) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  padding: 20px;
-  text-align: center;
-  border-left: 4px solid #00b894;
-  transition: all 0.3s ease;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  min-height: 160px;
+  min-height: 120px;
+}
+
+/* Prevent mobile tap highlight and keep background stable on active/click */
+.stat-card,
+.stat-card:active,
+.stat-card:focus {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  background-color: inherit !important;
+  color: inherit !important;
 }
 
 .stat-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  transform: translateY(-4px);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.12);
+  background: #000000; /* invert to black on hover */
+  color: #ffffff;
 }
 
 .stat-header {
   font-size: 0.85rem;
-  color: #b2bec3;
+  color: #7b8794;
   margin-bottom: 4px;
   font-weight: 600;
   letter-spacing: 0.5px;
@@ -1688,51 +1765,59 @@ function formatDateTime(dateString) {
 
 .stat-subheader {
   font-size: 1.48rem;
-  color: #636e72;
+  color: #7b8794;
   margin-bottom: 12px;
+  font-weight: 700;
+}
+
 .stat-value {
   font-size: 2rem;
   font-weight: 700;
-  color: #ffffff;
+  color: #111827; /* dark text for values */
   margin: 8px 0;
   line-height: 1.2;
-} font-weight: bold;
-  color: #ffffff;
+  transition: all 0.3s ease;
 }
 
 .stat-value.uptime-value {
   color: #00b894;
 }
-
-.stat-value {
-  transition: all 0.3s ease;
+/* Ensure hover/active/focus do not force child text to white */
+.stat-card:hover .stat-value,
+.stat-card:active .stat-value,
+.stat-card:focus .stat-value,
+.stat-card:hover .stat-subheader,
+.stat-card:active .stat-subheader,
+.stat-card:focus .stat-subheader,
+.stat-card:hover .stat-header,
+.stat-card:active .stat-header,
+.stat-card:focus .stat-header {
+  color: inherit !important;
 }
 
 .stat-value.response-value {
   color: #74b9ff;
 }
 
-.stat-value.uptime-value {
-  color: #00b894;
-}
-
 .stat-value.cert-value {
-  color: #fdcb6e;
+  color: #00b894;
 }
 
 .stat-loading {
   animation: pulse 1.5s infinite;
+  margin-top: 8px;
+  font-size: 0.8rem;
+}
+
 .stat-trend {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  margin-top: auto;
+  margin-top: 8px;
   padding-top: 8px;
   font-size: 0.8rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-} margin-top: 8px;
-  font-size: 0.8rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.04);
 }
 
 .trend-icon {
@@ -1741,15 +1826,15 @@ function formatDateTime(dateString) {
 }
 
 .trend-icon.up {
-  color: #00b894;
+  color: #2fb07b;
 }
 
 .trend-icon.down {
-  color: #e17055;
+  color: #d67b63;
 }
 
 .trend-text {
-  color: #b2bec3;
+  color: #94a3b8;
   font-weight: 500;
 }
 
@@ -2327,13 +2412,23 @@ function formatDateTime(dateString) {
   }
   
   .monitor-status-section {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
     text-align: left;
+    width: 100%;
   }
   
   .current-status {
-    font-size: 1.2rem;
-    padding: 8px 16px;
+    font-size: 1rem;
+    padding: 6px 10px;
     min-width: auto;
+    max-width: 220px;
+    width: auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   
   .stats-grid {
@@ -2428,7 +2523,7 @@ function formatDateTime(dateString) {
 
   .stat-header {
     font-size: 0.9rem;
-    color: #e6eef0;
+    color: #c7d0d4;
   }
 
   .stat-value {
@@ -2500,7 +2595,7 @@ function formatDateTime(dateString) {
 .monitor-detail .history-table th,
 .monitor-detail .history-table td,
 .monitor-detail .status-info {
-  color: #eef6f7 !important;
+  color: #c7d0d4 !important;
 }
 
 /* Monitor title: use black for better legibility as requested */
@@ -2520,9 +2615,102 @@ function formatDateTime(dateString) {
 @media (max-width: 768px) {
   .monitor-detail .chart-container { background: #071014 !important; }
   .monitor-detail .chart-container canvas { box-shadow: none !important; }
-  .monitor-detail .stat-card { background: linear-gradient(180deg,#101315,#0f1214) !important; border-left-color: #00b894 !important; }
+  .monitor-detail .stat-card { background: #ffffff !important; color: #111827 !important; border-left-color: #00b894 !important; }
   .monitor-detail .history-table { background: #0b0f11 !important; }
   .monitor-detail .history-table th { background: #1b1f22 !important; color: #eef6f7 !important; }
   .monitor-detail .history-table td { color: #ddeff0 !important; }
+
+  /* Ensure detail header doesn't collide with fixed navbar on small screens */
+  .monitor-detail .monitor-detail-content {
+    padding-top: 80px !important;
+  }
+
+  /* Stack header content and tighten spacing on mobile */
+  .monitor-detail .detail-header {
+    padding: 14px 16px !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+}
+</style>
+
+<style scoped>
+@media (max-width: 480px) {
+  /* Compact 3-column stats layout like provided screenshot */
+  .monitor-detail .stats-grid {
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 8px !important;
+    margin-bottom: 12px !important;
+  }
+
+  .monitor-detail .stat-card {
+    padding: 10px !important;
+    min-height: 86px !important;
+    border-radius: 10px !important;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.06) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    align-items: center !important;
+    text-align: center !important;
+  }
+
+  .monitor-detail .stat-header {
+    font-size: 0.72rem !important;
+    margin-bottom: 6px !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.4px !important;
+    /* color intentionally inherited from desktop rules */
+  }
+
+  .monitor-detail .stat-subheader {
+    font-size: 0.96rem !important;
+    margin-bottom: 6px !important;
+    /* ensure readable on white stat-cards */
+    color: #6b7280 !important;
+    font-weight: 600 !important;
+    /* color inherited */
+  }
+
+  /* Force headers/subheaders inside stat-cards to a readable muted tone */
+  .monitor-detail .stat-card .stat-header {
+    color: #7b8794 !important;
+  }
+  .monitor-detail .stat-card .stat-subheader {
+    color: #6b7280 !important;
+  }
+
+  .monitor-detail .stat-value {
+    font-size: 1.2rem !important;
+    font-weight: 700 !important;
+    margin: 4px 0 !important;
+    line-height: 1.1 !important;
+    /* color inherited */
+  }
+
+  /* Slightly smaller trend area, remove strong border so it's subtle */
+  .monitor-detail .stat-trend {
+    border-top: 1px solid rgba(0,0,0,0.04) !important;
+    margin-top: 6px !important;
+    padding-top: 6px !important;
+    font-size: 0.7rem !important;
+    /* color inherited */
+  }
+
+  .monitor-detail .trend-icon {
+    font-size: 0.85rem !important;
+  }
+
+  /* Make status pill full-width and prominent but not too tall */
+  .monitor-detail .current-status {
+    display: block !important;
+    width: 100% !important;
+    padding: 10px 12px !important;
+    font-size: 1.02rem !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
+    margin: 0 0 8px 0 !important;
+  }
 }
 </style>

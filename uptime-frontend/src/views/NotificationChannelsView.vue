@@ -1,13 +1,15 @@
 <template>
   <div class="notification-channels">
-    <div class="page-header">
-      <h1>Notification Channels</h1>
-      <button @click="showCreateForm = true" class="btn btn-primary">
-        Add Channel
-      </button>
-    </div>
+    <div class="content-inner">
+      <div class="page-header">
+      <div class="page-header-inner">
+        <h1>Notification Channels</h1>
+          <button @click="showCreateForm = true" class="btn btn-primary">
+            Add Channel
+          </button>
+      </div>
 
-    <!-- Create/Edit Form -->
+      <!-- Create/Edit Form -->
     <div v-if="showCreateForm || editingChannel" class="channel-form-container">
       <form @submit.prevent="submitForm" class="channel-form">
         <h2>{{ editingChannel ? 'Edit' : 'Add New' }} Notification Channel</h2>
@@ -260,6 +262,7 @@
         :key="channel.id"
         class="channel-card"
         :class="{ 'channel-disabled': !channel.is_enabled }"
+        @click="openActionSheet(channel, $event)"
       >
         <div class="channel-header">
           <div class="channel-type-badge" :class="`type-${channel.type}`">
@@ -297,28 +300,47 @@
         </div>
         
         <div class="channel-actions">
-          <button 
-            @click="toggleChannel(channel.id)" 
+          <button
+            @click.stop="toggleChannel(channel.id)"
             :class="channel.is_enabled ? 'btn btn-warning btn-sm' : 'btn btn-success btn-sm'"
           >
             {{ channel.is_enabled ? 'Disable' : 'Enable' }}
           </button>
-          <button @click="editChannel(channel)" class="btn btn-primary btn-sm">
+          <button @click.stop="editChannel(channel)" class="btn btn-primary btn-sm">
             Edit
           </button>
-          <button 
-            @click="testChannelById(channel.id)" 
+          <button
+            @click.stop="testChannelById(channel.id)"
             :disabled="!channel.is_enabled"
             class="btn btn-info btn-sm"
           >
             Test
           </button>
-          <button @click="deleteChannel(channel.id)" class="btn btn-danger btn-sm">
+          <button @click.stop="deleteChannel(channel.id)" class="btn btn-danger btn-sm">
             Delete
           </button>
         </div>
       </div>
     </div>
+    </div>
+
+  <!-- Mobile Action Sheet -->
+  <div v-if="actionChannel" class="action-sheet-backdrop" @click.self="closeActionSheet">
+    <div class="action-sheet">
+      <h3 class="action-sheet-title">{{ actionChannel.name }}</h3>
+      <div class="action-sheet-actions">
+        <button @click="actionToggle" :class="actionChannel.is_enabled ? 'btn btn-warning btn-block' : 'btn btn-success btn-block'">
+          {{ actionChannel.is_enabled ? 'Disable' : 'Enable' }}
+        </button>
+        <button @click="actionEdit" class="btn btn-primary btn-block">Edit</button>
+        <button @click="actionTest" :disabled="!actionChannel.is_enabled" class="btn btn-info btn-block">Test</button>
+        <button @click="actionDelete" class="btn btn-danger btn-block">Delete</button>
+        <button @click="closeActionSheet" class="btn btn-secondary btn-block">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  </div>
   </div>
 </template>
 
@@ -332,6 +354,7 @@ const showCreateForm = ref(false)
 const editingChannel = ref(null)
 const submitting = ref(false)
 const testing = ref(false)
+const actionChannel = ref(null)
 
 const form = ref({
   name: '',
@@ -643,23 +666,107 @@ function maskUrl(url) {
   if (!url) return ''
   return url.substring(0, 30) + '...'
 }
+
+function openActionSheet(channel, evt) {
+  // Ignore clicks that originated on interactive elements (buttons/links)
+  if (evt && evt.target) {
+    const btn = evt.target.closest && evt.target.closest('button, a')
+    if (btn) return
+  }
+
+  // Only open sheet on smaller viewports
+  if (typeof window !== 'undefined' && !window.matchMedia('(max-width: 768px)').matches) return
+  actionChannel.value = channel
+}
+
+function closeActionSheet() {
+  actionChannel.value = null
+}
+
+function actionEdit() {
+  if (!actionChannel.value) return
+  editChannel(actionChannel.value)
+  closeActionSheet()
+}
+
+function actionTest() {
+  if (!actionChannel.value) return
+  testChannelById(actionChannel.value.id)
+  closeActionSheet()
+}
+
+function actionDelete() {
+  if (!actionChannel.value) return
+  deleteChannel(actionChannel.value.id)
+  closeActionSheet()
+}
+
+async function actionToggle() {
+  if (!actionChannel.value) return
+  await toggleChannel(actionChannel.value.id)
+  closeActionSheet()
+}
 </script>
 
 <style scoped>
 .notification-channels {
-  padding: 20px;
+  padding: 20px 0; /* move horizontal padding to inner container to match app layout */
+}
+
+/* Mobile action-sheet and responsive tweaks */
+.action-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.36);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+.action-sheet {
+  width: calc(100% - 40px);
+  max-width: 540px;
+  background: linear-gradient(180deg, #ffffff, #fbfdff);
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 12px 40px rgba(2,6,23,0.18);
+  transform: translateY(0) scale(1);
+  opacity: 1;
+  transition: transform 220ms ease, opacity 220ms ease;
+  max-height: 80vh;
+  overflow: auto;
+}
+.action-sheet.enter {
+  transform: translateY(8px) scale(0.98);
+  opacity: 0;
+}
+.action-sheet-title { margin: 0 0 8px 0; font-weight:600; }
+.action-sheet-actions { display:flex; flex-direction:column; gap:10px; }
+.btn-block { display:block; width:100%; }
+
+@media (max-width: 768px) {
+  /* keep the primary enable/disable button visible on mobile, hide the other inline buttons */
+  .channel-actions { display: flex; align-items: center; gap: 8px; }
+  .channel-actions > .btn:not(:first-child) { display: none !important; }
+  .channel-card { cursor: pointer; }
 }
 
 .page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 30px;
+  display: block;
+  padding: 12px 0; /* vertical spacing only; inner container handles horizontal padding */
+  margin: 0 0 32px 0;
+  width: 100%;
+  position: relative;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.98);
+  box-shadow: 0 6px 20px rgba(12,17,23,0.06);
 }
 
 .page-header h1 {
   margin: 0;
   color: #2c3e50;
+  font-size: clamp(1.25rem, 2.0vw, 1.6rem);
+  font-weight: 600;
 }
 
 .channel-form-container {
@@ -758,22 +865,56 @@ function maskUrl(url) {
 
 .channels-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
+
+/* Standardize small primary buttons used across the view */
+.btn-primary-sm {
+  --btn-padding-y: 8px;
+  --btn-padding-x: 12px;
+  padding: var(--btn-padding-y) var(--btn-padding-x);
+  font-size: 0.95rem;
+  line-height: 1;
+  min-height: 40px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Ensure small buttons don't stretch full-width on desktop but remain full on narrow screens */
+.btn-primary-sm.full-width-mobile {
+  width: auto;
+}
+
+@media (max-width: 640px) {
+  .btn-primary-sm.full-width-mobile {
+    width: 100%;
+  }
+}
 .channel-card {
   background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  padding: 20px;
-  border: 2px solid transparent;
-  transition: all 0.2s ease;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+  padding: clamp(12px, 1.2vw, 20px);
+  border: 1px solid rgba(0,0,0,0.03);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  /* ensure cards align in a row by keeping consistent minimum height */
+  min-height: 150px;
 }
 
 .channel-card:hover {
-  border-color: #3498db;
-  transform: translateY(-2px);
+  border-color: rgba(52,152,219,0.18);
+  transform: translateY(-4px);
+  box-shadow: 0 10px 24px rgba(52,152,219,0.06);
 }
 
 .channel-card.channel-disabled {
@@ -788,9 +929,10 @@ function maskUrl(url) {
 
 .channel-header {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 15px;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .channel-type-badge {
@@ -839,12 +981,12 @@ function maskUrl(url) {
 }
 
 .channel-name {
-  margin: 0 0 15px 0;
+  margin: 0 0 12px 0;
   color: #2c3e50;
-  font-size: 1.1em;
+  font-size: clamp(1rem, 1.1vw, 1.1em);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .disabled-badge {
@@ -857,10 +999,12 @@ function maskUrl(url) {
 }
 
 .channel-details {
-  margin-bottom: 20px;
-  font-size: 0.9em;
+  margin-bottom: 16px;
+  font-size: clamp(0.88rem, 0.9vw, 0.95rem);
   color: #7f8c8d;
-  line-height: 1.5;
+  line-height: 1.45;
+  /* Reserve vertical space so cards with short details don't push buttons up */
+  min-height: 44px;
 }
 
 .channel-details strong {
@@ -869,8 +1013,34 @@ function maskUrl(url) {
 
 .channel-actions {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
+  /* Push actions to the bottom of the card for consistent alignment */
+  margin-top: auto;
+}
+
+/* Make channel action buttons uniform in size and spacing */
+.channel-actions .btn {
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  flex: 1 1 0%;
+  min-width: 0;
+}
+
+.channel-actions .btn-sm {
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  min-width: 60px;
+  height: 32px;
+}
+
+.channel-actions .btn + .btn {
+  margin-left: 6px;
 }
 
 .no-channels {
@@ -922,6 +1092,56 @@ function maskUrl(url) {
   background-color: #2980b9;
 }
 
+/* Header layout: stack title above the button (button below title) */
+.page-header {
+  /* keep outer header as visual container; inner wrapper controls content width */
+  padding: 12px 16px;
+  background: rgba(255,255,255,0.98);
+  border-radius: 10px;
+}
+
+.content-inner {
+  width: 100%;
+  max-width: 1280px; /* match other pages like Monitors/Incidents */
+  margin: 0 auto 24px;
+  padding: 18px 20px; /* same inner padding as header-content in other views */
+  box-sizing: border-box;
+}
+
+.page-header-inner {
+  width: 100%;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: stretch;
+  padding: 0;
+}
+
+.page-header-inner h1 {
+  margin: 0 0 6px 0;
+  color: #2c3e50;
+}
+
+.page-header-inner .btn {
+  width: auto;
+  max-width: 360px; /* smaller max so header button looks compact */
+  justify-content: center;
+  align-self: flex-start; /* align to the left edge of the inner container */
+  padding: 8px 12px;
+  font-size: 0.95rem;
+  height: 36px;
+}
+
+/* Disable animation for header button to avoid float/hover effects */
+.page-header .btn,
+.page-header .btn:hover,
+.page-header .btn:active {
+  transition: none !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
 .btn-secondary {
   background-color: #95a5a6;
   color: white;
@@ -952,6 +1172,7 @@ function maskUrl(url) {
 .btn-sm {
   padding: 5px 10px;
   font-size: 0.8em;
+  min-height: 34px;
 }
 
 .btn-lg {
@@ -987,9 +1208,9 @@ function maskUrl(url) {
   }
   
   .page-header {
-    padding: 1.25rem;
+    padding: 12px;
     flex-direction: column;
-    gap: 1rem;
+    gap: 12px;
     align-items: stretch;
   }
   
@@ -998,9 +1219,13 @@ function maskUrl(url) {
     margin-bottom: 0;
   }
   
-  .page-header .btn {
+  .page-header .btn,
+  .page-header-inner .btn {
+    position: static;
     width: 100%;
     justify-content: center;
+    padding: 10px 16px;
+    align-self: stretch;
   }
   
   .channel-form-container {
@@ -1017,7 +1242,7 @@ function maskUrl(url) {
   
   .channels-grid {
     grid-template-columns: 1fr;
-    gap: 1rem;
+    gap: 1.5rem; /* increased vertical spacing between cards on mobile */
   }
   
   .channel-card {
@@ -1043,10 +1268,16 @@ function maskUrl(url) {
     flex-direction: column;
     gap: 0.5rem;
   }
-  
-  .channel-actions .btn {
+  .channel-actions .btn,
+  .channel-actions .btn-sm {
+    display: block;
     width: 100%;
+    max-width: 100%;
+    margin: 0;
+    box-sizing: border-box;
   }
+  /* keep only the first (toggle) button visible inline on narrow screens */
+  .channel-actions > .btn:not(:first-child) { display: none !important; }
   
   .telegram-help,
   .discord-help,
@@ -1068,11 +1299,11 @@ function maskUrl(url) {
   }
   
   .page-header {
-    padding: 1rem;
+    padding: 8px 10px;
   }
   
   .page-header h1 {
-    font-size: 1.5rem;
+    font-size: 1.25rem;
   }
   
   .channel-form-container {
@@ -1102,6 +1333,102 @@ function maskUrl(url) {
   
   .channel-card {
     padding: 1rem;
+  }
+
+  /* Mobile-specific modern card polish */
+  .channel-card {
+    padding: 12px;
+    border-radius: 12px;
+    box-shadow: 0 8px 20px rgba(3, 18, 28, 0.06);
+    border: 1px solid rgba(12, 17, 23, 0.04);
+    min-height: auto;
+  }
+
+  .channel-header {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .channel-type-badge {
+    font-size: 0.75rem;
+    padding: 6px 10px;
+    border-radius: 8px;
+  }
+
+  .status-indicator {
+    width: 10px;
+    height: 10px;
+  }
+
+  .channel-name {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .channel-details {
+    font-size: 0.88rem;
+    color: #6b7280;
+    min-height: 40px;
+    margin-bottom: 12px;
+  }
+
+  .channel-actions {
+    flex-direction: column;
+    gap: 8px;
+    padding: 0; /* ensure no extra padding around buttons */
+  }
+
+  .channel-actions .btn,
+  .channel-actions .btn-sm {
+    display: block;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 6px 8px;
+    border-radius: 6px;
+    height: 32px;
+    box-sizing: border-box;
+  }
+
+  /* remove left margins between stacked buttons on small screens */
+  .channel-actions .btn + .btn,
+  .channel-actions .btn + .btn-sm,
+  .channel-actions .btn-sm + .btn,
+  .channel-actions .btn-sm + .btn-sm {
+    margin-left: 0;
+    margin-top: 8px;
+  }
+
+  /* keep only the first (toggle) button visible inline on very small screens */
+  .channel-actions > .btn:not(:first-child) { display: none !important; }
+
+  /* remove tiny right gap by expanding buttons to cover card inner padding */
+  .channel-card {
+    /* ensure consistent padding reference */
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .channel-actions .btn,
+  .channel-actions .btn-sm {
+    width: calc(100% + 24px); /* extend full width across card inner padding */
+    margin-left: -12px;
+    margin-right: -12px;
+  }
+
+  /* Keep the first (toggle) button compact so it doesn't cover the card area */
+  .channel-actions > .btn:first-child {
+    width: auto !important;
+    display: inline-flex !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    align-self: flex-end;
+    padding: 6px 10px;
+    box-sizing: border-box;
   }
   
   .channel-title {
