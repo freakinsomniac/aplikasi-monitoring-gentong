@@ -786,6 +786,46 @@ async function actionToggle() {
   align-items: start;
 }
 
+/* Mobile: make the channel form stack and use full available width */
+@media (max-width: 640px) {
+  .channel-form-container {
+    margin: 12px auto 18px;
+    padding: 8px;
+    max-width: calc(100% - 24px);
+    border-radius: 10px;
+  }
+
+  .channel-form {
+    grid-template-columns: 1fr; /* single column */
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .channel-form h2 {
+    grid-column: 1 / -1;
+    text-align: left;
+    font-size: 1.05rem;
+  }
+
+  .form-section {
+    grid-column: 1 / -1;
+    padding: 12px;
+  }
+
+  .form-actions {
+    justify-content: stretch;
+    flex-direction: column-reverse;
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .form-actions .btn {
+    width: 100%;
+  }
+
+  .channel-card { padding: 12px; }
+}
+
 /* Prevent grid children and inputs from forcing horizontal overflow on narrow screens */
 .channel-form, .channel-form * {
   box-sizing: border-box;
@@ -1253,8 +1293,21 @@ textarea.form-control {
 
 @media (max-width: 768px) {
   .notification-channels {
-    padding: 1rem;
-    padding-top: 5rem;
+    padding: 0;
+    padding-top: 2.5rem;
+  }
+  /* Reserve space for the floating nav button on the left so title doesn't overlap */
+  .page-header-inner {
+    padding-left: 56px;
+  }
+  /* Remove gutters entirely so content fills viewport */
+  .content-inner {
+    padding-left: 0;
+    padding-right: 0;
+    max-width: none;
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
   }
   
   .page-header {
@@ -1304,24 +1357,25 @@ textarea.form-control {
   .page-header .btn,
   .page-header-inner .btn {
     position: static;
-    width: 100%;
+    width: auto;
     justify-content: center;
     padding: 10px 16px;
     align-self: stretch;
   }
   
   .channel-form-container {
-    padding: 0.5rem;
-    margin: 8px 0;
-    max-width: 100%;
+    padding: 2px 4px;
+    margin: 0;
+    max-width: none;
     width: 100%;
-    border-radius: 8px;
+    border-radius: 6px;
   }
   
   .channel-form {
-    padding: 1rem;
+    padding: 0.5rem;
     grid-template-columns: 1fr;
-    gap: 12px;
+    gap: 8px;
+    align-items: stretch;
   }
 
   /* Improve spacing for checkbox label and form hints on mobile */
@@ -1361,21 +1415,25 @@ textarea.form-control {
   }
   
   .channel-form h2 {
-    font-size: 1.25rem;
+    font-size: 1.18rem;
   }
   
   .channels-grid {
     grid-template-columns: 1fr;
-    gap: 1.5rem; /* increased vertical spacing between cards on mobile */
+    gap: 0.4rem; /* tighter spacing to maximize card width */
+    padding-left: 0;
+    padding-right: 0;
+    margin-left: 0;
+    margin-right: 0;
   }
   
   .channel-card {
-    padding: 1.25rem;
+    padding: 8px;
   }
   
   .channel-header {
-    flex-direction: column;
-    align-items: flex-start;
+    flex-direction: row;
+    gap: 0.5rem;
     gap: 0.75rem;
   }
   
@@ -1384,23 +1442,7 @@ textarea.form-control {
     gap: 0.75rem;
   }
   
-  .form-actions .btn {
-    width: 100%;
-  }
-  
-  .channel-actions {
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  .channel-actions .btn,
-  .channel-actions .btn-sm {
-    display: block;
-    width: 100%;
-    max-width: 100%;
-    margin: 0;
-    box-sizing: border-box;
-  }
-  /* keep only the first (toggle) button visible inline on narrow screens */
+  /* On small screens hide non-toggle action buttons to keep layout compact */
   .channel-actions > .btn:not(:first-child) { display: none !important; }
   
   .telegram-help,
@@ -1419,7 +1461,19 @@ textarea.form-control {
 
 @media (max-width: 480px) {
   .notification-channels {
-    padding: 0.75rem;
+    padding: 0;
+  }
+  /* Slightly smaller reserved space on very small screens */
+  .page-header-inner {
+    padding-left: 48px;
+  }
+  .content-inner {
+    padding-left: 0;
+    padding-right: 0;
+    width: 100%;
+    max-width: none;
+    margin-left: 0;
+    margin-right: 0;
   }
   
   .page-header {
@@ -1445,15 +1499,15 @@ textarea.form-control {
   }
   
   .channel-form-container {
-    padding: 0.5rem;
-    margin: 6px 0;
+    padding: 4px;
+    margin: 0;
     max-width: 100%;
     width: 100%;
-    border-radius: 8px;
+    border-radius: 6px;
   }
   
   .channel-form {
-    padding: 1rem;
+    padding: 0.75rem;
   }
 
   /* Reduce inner spacing to maximize usable width on very small screens */
@@ -1527,7 +1581,7 @@ textarea.form-control {
 
   /* Mobile-specific modern card polish */
   .channel-card {
-    padding: 12px;
+    padding: 10px;
     border-radius: 12px;
     box-shadow: 0 8px 20px rgba(3, 18, 28, 0.06);
     border: 1px solid rgba(12, 17, 23, 0.04);

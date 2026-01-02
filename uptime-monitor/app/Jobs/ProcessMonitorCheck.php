@@ -529,7 +529,10 @@ class ProcessMonitorCheck implements ShouldQueue
                 ]);
 
                 // Send notification only if consecutive failures meet threshold (FR-16: Anti-spam)
-                if ($this->monitor->consecutive_failures >= $this->monitor->notify_after_retries) {
+                // Require at least 10 consecutive failures before triggering notifications to bots.
+                $notifyThreshold = isset($this->monitor->notify_after_retries) ? (int) $this->monitor->notify_after_retries : 10;
+                $effectiveThreshold = max(10, $notifyThreshold);
+                if ($this->monitor->consecutive_failures >= $effectiveThreshold) {
                     SendNotification::dispatch($this->monitor, 'down', $incident);
                 }
 

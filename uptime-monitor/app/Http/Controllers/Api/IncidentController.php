@@ -49,6 +49,12 @@ class IncidentController extends Controller
                     'id' => $incident->id,
                     'monitor_id' => $incident->monitor_id,
                     'monitor_name' => $incident->monitor?->name,
+                    'monitor' => [
+                        'id' => $incident->monitor?->id,
+                        'name' => $incident->monitor?->name,
+                        'target' => $incident->monitor?->target,
+                        'type' => $incident->monitor?->type,
+                    ],
                     'started_at' => $incident->started_at,
                     'ended_at' => $incident->ended_at,
                     'resolved_at' => $incident->ended_at,

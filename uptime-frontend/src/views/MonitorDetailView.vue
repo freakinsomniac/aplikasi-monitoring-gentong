@@ -154,7 +154,14 @@
           <div class="chart-spinner"></div>
           <span>Loading chart data...</span>
         </div>
-        <canvas ref="responseChart" width="800" height="300" :style="{ opacity: chartLoading ? 0.3 : 1 }"></canvas>
+        <Line 
+          v-if="chartData && !chartLoading" 
+          :data="chartData" 
+          :options="chartOptions"
+        />
+        <div v-if="!chartData && !chartLoading" class="no-chart-data">
+          <p>No chart data available</p>
+        </div>
       </div>
     </div>
 
@@ -255,12 +262,61 @@
       <button @click="fetchMonitorData" class="btn btn-primary">Retry</button>
     </div>
     </div>
+
+    <!-- Notification Popup -->
+    <transition name="notification-slide">
+      <div v-if="showNotification" class="notification-popup" :class="`notification-${notificationType}`">
+        <div class="notification-content">
+          <span class="notification-icon">
+            <span v-if="notificationType === 'success'">✅</span>
+            <span v-else-if="notificationType === 'error'">❌</span>
+            <span v-else-if="notificationType === 'warning'">⚠️</span>
+            <span v-else>ℹ️</span>
+          </span>
+          <span class="notification-message">{{ notificationMessage }}</span>
+          <button @click="showNotification = false" class="notification-close">×</button>
+        </div>
+      </div>
+    </transition>
+
+    <!-- Confirmation Dialog -->
+    <transition name="notification-slide">
+      <div v-if="showConfirmation" class="confirmation-dialog">
+        <div class="confirmation-content">
+          <div class="confirmation-icon">⚠️</div>
+          <div class="confirmation-message">{{ confirmationMessage }}</div>
+          <div class="confirmation-actions">
+            <button @click="handleConfirmNo" class="confirm-btn cancel-btn">Cancel</button>
+            <button @click="handleConfirmYes" class="confirm-btn yes-btn">Yes, Continue</button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <!-- Confirmation Dialog -->
+    <transition name="notification-slide">
+      <div v-if="showConfirmation" class="confirmation-dialog">
+        <div class="confirmation-content">
+          <div class="confirmation-icon">⚠️</div>
+          <div class="confirmation-message">{{ confirmationMessage }}</div>
+          <div class="confirmation-actions">
+            <button @click="handleConfirmNo" class="confirm-btn cancel-btn">Cancel</button>
+            <button @click="handleConfirmYes" class="confirm-btn yes-btn">Yes, Continue</button>
+          </div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 <script setup>
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useMonitorStore } from '../stores/monitors'
+import { Line } from 'vue-chartjs'
+import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler } from 'chart.js'
+
+// Register Chart.js components
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
 const route = useRoute()
 const router = useRouter()
@@ -276,8 +332,8 @@ const itemsPerPage = 5
 const statusHistory = ref([]) // (masih ada, walau belum dipakai)
 const allStatusHistory = ref([])
 const totalItems = ref(0)
-const responseChart = ref(null)
-const chartInstance = ref(null)
+const chartData = ref(null)
+const chartOptions = ref(null)
 const chartLoading = ref(false)
 const chartRefreshInterval = ref(null)
 const historyRefreshInterval = ref(null)
@@ -288,6 +344,16 @@ const lastKnownCheckedAt = ref(null)
 const pollingFirstCheck = ref(false)
 let firstCheckPollInterval = null
 let firstCheckPollAttempts = 0
+
+// Notification popup state
+const showNotification = ref(false)
+const notificationMessage = ref('')
+const notificationType = ref('info') // 'success', 'error', 'warning', 'info'
+
+// Confirmation dialog state
+const showConfirmation = ref(false)
+const confirmationMessage = ref('')
+const confirmationCallback = ref(null)
 
 // Chart periods
 const chartPeriods = [
@@ -433,7 +499,7 @@ onUnmounted(() => {
 watch(() => route.params.id, fetchMonitorData)
 
 watch(() => monitor.value, async (newVal) => {
-  if (newVal && !chartLoading.value && responseChart.value) {
+  if (newVal && !chartLoading.value) {
     console.log('🔄 Monitor data changed, refreshing chart...')
     await nextTick()
     await fetchChartData()
@@ -441,6 +507,36 @@ watch(() => monitor.value, async (newVal) => {
 }, { deep: false })
 
 // Helper functions for SSL certificate
+function showNotif(message, type = 'info') {
+  notificationMessage.value = message
+  notificationType.value = type
+  showNotification.value = true
+  
+  // Auto hide after 4 seconds
+  setTimeout(() => {
+    showNotification.value = false
+  }, 4000)
+}
+
+function showConfirm(message, callback) {
+  confirmationMessage.value = message
+  confirmationCallback.value = callback
+  showConfirmation.value = true
+}
+
+function handleConfirmYes() {
+  if (confirmationCallback.value) {
+    confirmationCallback.value()
+  }
+  showConfirmation.value = false
+  confirmationCallback.value = null
+}
+
+function handleConfirmNo() {
+  showConfirmation.value = false
+  confirmationCallback.value = null
+}
+
 function getCertExpiryDisplay() {
   console.log('🔍 getCertExpiryDisplay called for:', monitor.value?.name)
   
@@ -812,7 +908,7 @@ function startChartAutoRefresh() {
   console.log(`🔄 Starting chart auto-refresh - Refreshing every ${refreshInterval/1000}s`)
   
   chartRefreshInterval.value = setInterval(() => {
-    if (responseChart.value && monitor.value && !isUpdating.value) {
+    if (monitor.value && !isUpdating.value) {
       const timestamp = new Date().toLocaleTimeString()
       console.log(`⏰ [${timestamp}] Triggering chart auto-refresh...`)
       updateChartRealtime()
@@ -820,7 +916,6 @@ function startChartAutoRefresh() {
       refreshMonitorData()
     } else {
       console.log('⏭️ Skipping auto-refresh - conditions not met:', {
-        hasCanvas: !!responseChart.value,
         hasMonitor: !!monitor.value,
         notUpdating: !isUpdating.value
       })
@@ -932,7 +1027,7 @@ function stopFallbackHistoryPolling() {
 }
 
 async function updateChartRealtime() {
-  if (!responseChart.value || chartLoading.value) return
+  if (chartLoading.value) return
   
   // Debounce (500ms for realtime updates)
   const now = Date.now()
@@ -1001,19 +1096,6 @@ async function fetchChartData() {
     stopChartAutoRefresh()
   }
   
-  // Wait for canvas to be ready
-  let retries = 0
-  while (!responseChart.value && retries < 10) {
-    await new Promise(resolve => setTimeout(resolve, 100))
-    retries++
-  }
-  
-  if (!responseChart.value) {
-    console.warn('⚠️ Canvas element not ready after retries')
-    chartLoading.value = false
-    return
-  }
-  
   // Destroy existing chart
   destroyChart()
   
@@ -1065,166 +1147,104 @@ async function fetchChartData() {
 }
 
 function drawChart(dataPoints) {
-  if (!responseChart.value) {
-    console.warn('⚠️ Canvas not available for drawing')
-    return
-  }
-  
   if (!dataPoints || dataPoints.length === 0) {
-    console.warn('⚠️ No data points to draw')
+    console.log('⚠️ No data points to draw')
+    chartData.value = null
     return
   }
   
   console.log('🎨 Drawing chart with', dataPoints.length, 'data points')
   
-  // Create chart using Canvas API
-  const canvas = responseChart.value
-  const ctx = canvas.getContext('2d')
+  // Prepare labels and data for Chart.js
+  const labels = dataPoints.map(d => formatChartTime(d.time, selectedPeriod.value))
+  const values = dataPoints.map(d => d.value)
   
-  // Set canvas size
-  canvas.width = 800
-  canvas.height = 300
-  
-  // Clear canvas
-  ctx.clearRect(0, 0, canvas.width, canvas.height)
-  
-  // Draw background
-  const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height)
-  gradient.addColorStop(0, 'rgba(0, 184, 148, 0.2)')
-  gradient.addColorStop(1, 'rgba(0, 184, 148, 0.0)')
-  
-  // Draw chart area background
-  ctx.fillStyle = 'rgba(45, 52, 54, 0.8)'
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
-  
-  // Calculate chart dimensions
-  const padding = 40
-  const chartWidth = canvas.width - padding * 2
-  const chartHeight = canvas.height - padding * 2
-  const maxValue = Math.max(...dataPoints.map(d => d.value))
-  const minValue = Math.min(...dataPoints.map(d => d.value))
-  const valueRange = maxValue - minValue || 100
-
-  // Handle single data point to avoid division by zero
-  const segmentCount = Math.max(1, dataPoints.length - 1)
-  
-  // Draw grid lines
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'
-  ctx.lineWidth = 1
-  
-  // Horizontal grid lines
-  for (let i = 0; i <= 5; i++) {
-    const y = padding + (chartHeight / 5) * i
-    ctx.beginPath()
-    ctx.moveTo(padding, y)
-    ctx.lineTo(canvas.width - padding, y)
-    ctx.stroke()
+  // Configure chart data
+  chartData.value = {
+    labels: labels,
+    datasets: [
+      {
+        label: 'Response Time (ms)',
+        data: values,
+        borderColor: '#00b894',
+        backgroundColor: 'rgba(0, 184, 148, 0.1)',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.4,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        pointHoverBackgroundColor: '#00b894',
+        pointHoverBorderColor: '#fff',
+        pointHoverBorderWidth: 2
+      }
+    ]
   }
   
-  // Vertical grid lines
-  for (let i = 0; i <= 10; i++) {
-    const x = padding + (chartWidth / 10) * i
-    ctx.beginPath()
-    ctx.moveTo(x, padding)
-    ctx.lineTo(x, canvas.height - padding)
-    ctx.stroke()
-  }
-  
-  const xSpacing = chartWidth / segmentCount
-
-  // Draw chart line
-  if (dataPoints.length > 1) {
-    ctx.strokeStyle = '#00b894'
-    ctx.lineWidth = 3
-    ctx.lineCap = 'round'
-    ctx.lineJoin = 'round'
-    
-    ctx.beginPath()
-    
-    dataPoints.forEach((point, index) => {
-      const x = padding + xSpacing * index
-      const y = padding + chartHeight - ((point.value - minValue) / valueRange) * chartHeight
-      
-      if (index === 0) {
-        ctx.moveTo(x, y)
-      } else {
-        ctx.lineTo(x, y)
+  // Configure chart options
+  chartOptions.value = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        display: false
+      },
+      tooltip: {
+        mode: 'index',
+        intersect: false,
+        backgroundColor: 'rgba(45, 52, 54, 0.9)',
+        titleColor: '#fff',
+        bodyColor: '#00b894',
+        borderColor: '#00b894',
+        borderWidth: 1,
+        padding: 10,
+        displayColors: false,
+        callbacks: {
+          label: function(context) {
+            return context.parsed.y + ' ms'
+          }
+        }
       }
-    })
-    
-    ctx.stroke()
-    
-    // Draw gradient fill
-    ctx.fillStyle = gradient
-    ctx.lineTo(canvas.width - padding, canvas.height - padding)
-    ctx.lineTo(padding, canvas.height - padding)
-    ctx.closePath()
-    ctx.fill()
-    
-    // Draw data points with animation effect for latest point
-    ctx.fillStyle = '#00b894'
-    dataPoints.forEach((point, index) => {
-      const x = padding + xSpacing * index
-      const y = padding + chartHeight - ((point.value - minValue) / valueRange) * chartHeight
-      
-      ctx.beginPath()
-      // Make latest point larger and with glow effect
-      const radius = index === dataPoints.length - 1 ? 6 : 4
-      ctx.arc(x, y, radius, 0, Math.PI * 2)
-      
-      if (index === dataPoints.length - 1) {
-        // Add glow effect for latest point
-        ctx.shadowColor = '#00b894'
-        ctx.shadowBlur = 10
-        ctx.fill()
-        ctx.shadowBlur = 0
-      } else {
-        ctx.fill()
+    },
+    scales: {
+      x: {
+        grid: {
+          color: 'rgba(255, 255, 255, 0.05)',
+          drawBorder: false
+        },
+        ticks: {
+          color: '#b2bec3',
+          maxTicksLimit: 8,
+          maxRotation: 0,
+          font: {
+            size: 11
+          }
+        }
+      },
+      y: {
+        grid: {
+          color: 'rgba(255, 255, 255, 0.05)',
+          drawBorder: false
+        },
+        ticks: {
+          color: '#b2bec3',
+          callback: function(value) {
+            return value + ' ms'
+          },
+          font: {
+            size: 11
+          }
+        },
+        beginAtZero: true
       }
-    })
-    
-    // Draw Y-axis labels
-    ctx.fillStyle = '#b2bec3'
-    ctx.font = '12px Arial'
-    ctx.textAlign = 'right'
-    
-    for (let i = 0; i <= 5; i++) {
-      const value = maxValue - (valueRange / 5) * i
-      const y = padding + (chartHeight / 5) * i
-      ctx.fillText(Math.round(value) + 'ms', padding - 10, y + 4)
+    },
+    interaction: {
+      mode: 'nearest',
+      axis: 'x',
+      intersect: false
     }
-    
-    // Draw X-axis labels
-    ctx.textAlign = 'center'
-    dataPoints.forEach((point, index) => {
-      if (index % Math.ceil(dataPoints.length / 6) === 0 || index === dataPoints.length - 1) {
-        const x = padding + xSpacing * index
-        const label = formatChartTime(point.time, selectedPeriod.value)
-        ctx.fillText(label, x, canvas.height - 10)
-      }
-    })
-  } else if (dataPoints.length === 1) {
-    // Single data point: place it in the middle
-    const point = dataPoints[0]
-    const x = padding + chartWidth / 2
-    const y = padding + chartHeight - ((point.value - minValue) / valueRange) * chartHeight
-
-    ctx.fillStyle = '#00b894'
-    ctx.beginPath()
-    ctx.arc(x, y, 6, 0, Math.PI * 2)
-    ctx.fill()
-
-    // Draw labels for single point
-    ctx.fillStyle = '#b2bec3'
-    ctx.font = '12px Arial'
-    ctx.textAlign = 'center'
-    ctx.fillText(formatChartTime(point.time, selectedPeriod.value), x, canvas.height - 10)
-    ctx.textAlign = 'right'
-    ctx.fillText(Math.round(point.value) + 'ms', padding - 10, y + 4)
   }
   
-  chartInstance.value = true // Mark as initialized
-  console.log('✅ Chart drawn successfully')
+  console.log('✅ Chart configured successfully')
 }
 
 function getPeriodLimit(period) {
@@ -1245,11 +1265,14 @@ function formatChartTime(timestamp, period) {
       return date.toLocaleTimeString('en-US', { 
         hour: '2-digit', 
         minute: '2-digit',
+        second: '2-digit',
         hour12: false 
       })
     case '24h':
       return date.toLocaleTimeString('en-US', { 
         hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
         hour12: false 
       })
     case '7d':
@@ -1265,15 +1288,16 @@ function formatChartTime(timestamp, period) {
     default:
       return date.toLocaleTimeString('en-US', { 
         hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
         hour12: false 
       })
   }
 }
 
 function destroyChart() {
-  if (chartInstance.value) {
-    chartInstance.value = null
-  }
+  chartData.value = null
+  chartOptions.value = null
 }
 
 async function selectPeriod(period) {
@@ -1300,7 +1324,7 @@ async function selectPeriod(period) {
   await new Promise(resolve => setTimeout(resolve, 500))
   
   // Restart auto-refresh
-  if (monitor.value && chartInstance.value) {
+  if (monitor.value && chartData.value) {
     startChartAutoRefresh()
     console.log('✅ Period switched successfully to', period)
   }
@@ -1319,42 +1343,50 @@ async function toggleMonitor() {
       const result = await monitorStore.resumeMonitor(monitor.value.id)
       if (result.success) {
         console.log('✅ Monitor resumed successfully')
+        showNotif('Monitor resumed successfully', 'success')
       } else {
         console.error('❌ Failed to resume monitor:', result.message)
-        alert('Failed to resume monitor: ' + result.message)
+        showNotif('Failed to resume monitor', 'error')
       }
     } else {
       // Pause monitor for 60 minutes
       const result = await monitorStore.pauseMonitor(monitor.value.id, 60)
       if (result.success) {
         console.log('✅ Monitor paused successfully')
+        showNotif('Monitor paused for 60 minutes', 'success')
       } else {
         console.error('❌ Failed to pause monitor:', result.message)
-        alert('Failed to pause monitor: ' + result.message)
+        showNotif('Failed to pause monitor', 'error')
       }
     }
 
     await fetchMonitorData()
   } catch (err) {
     console.error('Error toggling monitor:', err)
-    alert('Error toggling monitor: ' + err.message)
+    showNotif('Error toggling monitor status', 'error')
   }
 }
 
 async function deleteMonitor() {
   if (!monitor.value) return
   
-  if (confirm(`Are you sure you want to delete "${monitor.value.name}"?`)) {
+  showConfirm(`Are you sure you want to delete "${monitor.value.name}"?`, async () => {
     try {
+      console.log('🗑️ Deleting monitor:', monitor.value.id)
       const result = await monitorStore.deleteMonitor(monitor.value.id)
       
       if (result.success) {
-        router.push('/monitors')
+        console.log('✅ Monitor deleted successfully')
+        showNotif('Monitor deleted successfully', 'success')
+        setTimeout(() => {
+          router.push('/monitors')
+        }, 1500)
       }
     } catch (err) {
-      console.error('Error deleting monitor:', err)
+      console.error('❌ Error deleting monitor:', err)
+      showNotif('Error deleting monitor', 'error')
     }
-  }
+  })
 }
 
 function visitMonitor() {
@@ -1371,7 +1403,7 @@ function visitMonitor() {
     if (['80', '443', '8080', '3000', '8000'].includes(port)) {
       url = port === '443' ? `https://${host}` : `http://${host}:${port}`
     } else {
-      alert('TCP service cannot be opened in browser')
+      showNotif('TCP service cannot be opened in browser', 'warning')
       return
     }
   }
@@ -1395,7 +1427,7 @@ function getVisitTooltip(monitor) {
 async function clearData() {
   if (!monitor.value) return
   
-  if (confirm('Are you sure you want to clear status history for this monitor?')) {
+  showConfirm('Are you sure you want to clear status history for this monitor?', async () => {
     try {
       console.log('🗑️ Clearing status history for monitor:', monitor.value.id)
       
@@ -1407,12 +1439,12 @@ async function clearData() {
       console.log('✅ Status history cleared successfully')
       
       // Show success message
-      alert('Status history cleared successfully. The history will rebuild as new checks are performed.')
+      showNotif('Status history cleared successfully', 'success')
     } catch (err) {
       console.error('❌ Error clearing status history:', err)
-      alert('Error clearing status history. Please try again.')
+      showNotif('Error clearing status history', 'error')
     }
-  }
+  })
 }
 
 function formatDate(dateString) {
@@ -1877,12 +1909,11 @@ function formatDateTime(dateString) {
 
 .chart-container {
   position: relative;
-  height: 300px;
-  background: rgba(26, 26, 26, 0.8);
-  border-radius: 8px;
-  padding: 10px;
+  height: 320px;
+  background: rgba(26, 26, 26, 0.9);
+  border-radius: 12px;
+  padding: 20px;
   transition: all 0.3s ease;
-  overflow: hidden;
 }
 
 .chart-container.loading {
@@ -1911,28 +1942,75 @@ function formatDateTime(dateString) {
   animation: spin 1s linear infinite;
 }
 
-.chart-skeleton {
-  height: 260px;
-  background: linear-gradient(90deg, #636e72 25%, #74828a 50%, #636e72 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
+.no-chart-data {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: #b2bec3;
+  font-size: 1rem;
+}
+
+.chart-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.chart-header h2 {
+  margin: 0;
+  color: #ffffff;
+  font-size: 1.5rem;
+}
+
+.chart-period {
+  display: flex;
+  gap: 8px;
+}
+
+.period-btn {
+  background: transparent;
+  color: #b2bec3;
+  border: 1px solid #636e72;
+  padding: 8px 16px;
   border-radius: 8px;
-  margin-top: 20px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.period-btn:hover {
+  border-color: #00b894;
+  color: #00b894;
+  background: rgba(0, 184, 148, 0.05);
+}
+
+.period-btn.active {
+  background: #00b894;
+  color: white;
+  border-color: #00b894;
+  box-shadow: 0 2px 8px rgba(0, 184, 148, 0.3);
 }
 
 .refresh-chart-btn {
   background: transparent;
   border: 1px solid #636e72;
   color: #b2bec3;
-  padding: 5px 10px;
-  border-radius: 4px;
+  padding: 8px 12px;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .refresh-chart-btn:hover:not(:disabled) {
   border-color: #00b894;
   color: #00b894;
+  background: rgba(0, 184, 148, 0.05);
 }
 
 .refresh-chart-btn:disabled {
@@ -1957,62 +2035,6 @@ function formatDateTime(dateString) {
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   margin-right: 5px;
-}
-
-.chart-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.chart-header h2 {
-  margin: 0;
-  color: #ffffff;
-  font-size: 1.5rem;
-}
-
-.chart-period {
-  display: flex;
-  gap: 5px;
-}
-
-.period-btn {
-  background: transparent;
-  color: #b2bec3;
-  border: 1px solid #636e72;
-  padding: 5px 12px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.9rem;
-  transition: all 0.2s;
-}
-
-.period-btn:hover {
-  border-color: #00b894;
-  color: #00b894;
-}
-
-.period-btn.active {
-  background: #00b894;
-  color: white;
-  border-color: #00b894;
-}
-
-.chart-container {
-  position: relative;
-  height: 300px;
-  background: rgba(26, 26, 26, 0.8);
-  border-radius: 8px;
-  padding: 10px;
-  transition: all 0.3s ease;
-  overflow: hidden;
-}
-
-.chart-container canvas {
-  width: 100%;
-  height: 100%;
-  display: block;
 }
 
 .status-history {
@@ -2299,6 +2321,204 @@ function formatDateTime(dateString) {
   border-top: 4px solid #00b894;
   border-radius: 50%;
   animation: spin 1s linear infinite;
+}
+
+/* Notification Popup */
+.notification-popup {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9999;
+  min-width: 350px;
+  max-width: 500px;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+}
+
+.notification-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border-radius: 12px;
+}
+
+.notification-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.notification-message {
+  flex: 1;
+  font-size: 0.95rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.notification-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: inherit;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.notification-close:hover {
+  opacity: 1;
+}
+
+.notification-success .notification-content {
+  background: linear-gradient(135deg, #00b894 0%, #00d2a0 100%);
+  color: white;
+}
+
+.notification-error .notification-content {
+  background: linear-gradient(135deg, #e17055 0%, #d85a3e 100%);
+  color: white;
+}
+
+.notification-warning .notification-content {
+  background: linear-gradient(135deg, #fdcb6e 0%, #fcb942 100%);
+  color: #2d3436;
+}
+
+.notification-info .notification-content {
+  background: linear-gradient(135deg, #74b9ff 0%, #0984e3 100%);
+  color: white;
+}
+
+/* Notification Animation */
+.notification-slide-enter-active,
+.notification-slide-leave-active {
+  transition: all 0.4s ease;
+}
+
+.notification-slide-enter-from {
+  transform: translateY(20px);
+  opacity: 0;
+}
+
+.notification-slide-leave-to {
+  transform: translateY(20px);
+  opacity: 0;
+}
+
+@media (max-width: 768px) {
+  .notification-popup {
+    top: 50%;
+    left: 50%;
+    right: auto;
+    bottom: auto;
+    transform: translate(-50%, -50%);
+    min-width: 90%;
+    max-width: 90%;
+  }
+  
+  .notification-slide-enter-from {
+    transform: translate(-50%, -50%) scale(0.9);
+    opacity: 0;
+  }
+  
+  .notification-slide-leave-to {
+    transform: translate(-50%, -50%) scale(0.9);
+    opacity: 0;
+  }
+}
+
+/* Confirmation Dialog */
+.confirmation-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10000;
+  min-width: 400px;
+  max-width: 500px;
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+}
+
+.confirmation-content {
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+  padding: 32px 28px;
+  border-radius: 16px;
+  text-align: center;
+}
+
+.confirmation-icon {
+  font-size: 3rem;
+  margin-bottom: 16px;
+}
+
+.confirmation-message {
+  color: #2d3436;
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.5;
+  margin-bottom: 24px;
+}
+
+.confirmation-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.confirm-btn {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 120px;
+}
+
+.cancel-btn {
+  background: #dfe6e9;
+  color: #2d3436;
+}
+
+.cancel-btn:hover {
+  background: #b2bec3;
+}
+
+.yes-btn {
+  background: linear-gradient(135deg, #e17055 0%, #d85a3e 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(225, 112, 85, 0.3);
+}
+
+.yes-btn:hover {
+  box-shadow: 0 6px 16px rgba(225, 112, 85, 0.4);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 768px) {
+  .confirmation-dialog {
+    min-width: 90%;
+    max-width: 90%;
+  }
+  
+  .confirmation-actions {
+    flex-direction: column;
+  }
+  
+  .confirm-btn {
+    width: 100%;
+  }
 }
 
 @keyframes spin {

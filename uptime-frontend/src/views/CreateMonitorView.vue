@@ -3,8 +3,8 @@
     <div class="page-header">
       <div class="header-content">
         <div class="header-main">
-          <h1>Create New Monitor</h1>
-          <p>Set up monitoring for your service</p>
+          <h1>Create Monitor</h1>
+          <!-- <p>Set up monitoring for your service</p> -->
         </div>
         <div class="header-actions">
           <router-link to="/monitors" class="btn btn-secondary">
@@ -109,17 +109,34 @@
                     :aria-expanded="showGroupDropdown"
                   />
                   <div v-if="showGroupDropdown && filteredGroups.length" class="group-dropdown" role="listbox">
-                    <div
-                      v-for="(group, idx) in filteredGroups"
-                      :key="group.name"
-                      class="group-item"
-                      :class="{ highlighted: idx === highlightedIndex }"
-                      @mousedown.prevent="selectGroupFromSearch(group)"
-                      role="option"
-                      :aria-selected="form.group_name === group.name"
-                    >
-                      <div class="group-item-left">📁 {{ group.name }}</div>
-                      <div class="group-item-right">{{ group.monitorsCount }} monitors</div>
+                    <div class="group-dropdown-inner">
+                      <div class="group-list" role="presentation">
+                        <div
+                          v-for="(group, idx) in filteredGroups"
+                          :key="group.name"
+                          class="group-list-item"
+                          :class="{ highlighted: idx === highlightedIndex }"
+                          @mouseenter="highlightedIndex = idx"
+                          @mousedown.prevent="selectGroupFromSearch(group)"
+                          role="option"
+                          :aria-selected="form.group_name === group.name"
+                        >
+                          <div class="group-icon">📁</div>
+                          <div class="group-name">{{ group.name }}</div>
+                          <div class="group-count">{{ group.monitorsCount }}</div>
+                        </div>
+                      </div>
+
+                      <div class="group-details" v-if="filteredGroups[highlightedIndex]">
+                        <h4 class="details-title">{{ filteredGroups[highlightedIndex].name }}</h4>
+                        <div class="details-stats">
+                          <div class="stat"><span class="dot up"></span> {{ filteredGroups[highlightedIndex].upCount || 0 }} up</div>
+                          <div class="stat"><span class="dot down"></span> {{ filteredGroups[highlightedIndex].downCount || 0 }} down</div>
+                          <div class="stat">⏱ Avg: {{ filteredGroups[highlightedIndex].avgResponse || 0 }}ms</div>
+                        </div>
+                        <p class="details-desc">{{ filteredGroups[highlightedIndex].description || 'No description' }}</p>
+                        <button type="button" class="btn btn-sm" @click.prevent="selectGroupFromSearch(filteredGroups[highlightedIndex])">Select this group</button>
+                      </div>
                     </div>
                   </div>
                   <input type="hidden" v-model="form.group_name" />
@@ -627,6 +644,15 @@ function selectHighlightedGroup() {
   if (g) selectGroupFromSearch(g)
 }
 
+// Keep highlighted item visible in list
+watch(highlightedIndex, async () => {
+  await nextTick()
+  const el = document.querySelector('.group-list-item.highlighted')
+  if (el && el.scrollIntoView) {
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }
+})
+
 function onTypeChange() {
   // Reset target when type changes
   form.target = ''
@@ -1012,9 +1038,9 @@ select.form-control:focus { z-index: 80 }
 
 .group-selector {
   margin-bottom: 0;
-  min-width: 160px;
-  max-width: 360px;
-  flex: 0 0 auto;
+  min-width: 140px;
+  max-width: 220px;
+  flex: 0 0 200px;
 }
 
 .group-input-container > .form-control:not(.group-selector) {
@@ -1034,13 +1060,117 @@ select.form-control:focus { z-index: 80 }
 .group-info { margin-top:6px; color: var(--muted); font-size:0.92rem }
 
 /* Searchable group dropdown styles */
-.group-search-wrapper { position: relative; width:100%; max-width:720px }
-.group-search { padding:8px 10px }
-.group-dropdown { position:absolute; top:100%; left:0; right:0; background: #ffffff; border:1px solid var(--border); box-shadow: 0 10px 30px rgba(15,23,36,0.06); max-height:220px; overflow:auto; z-index:1100; border-radius:8px; margin-top:8px }
-.group-item { display:flex; justify-content:space-between; gap:12px; padding:8px 12px; cursor:pointer }
-.group-item:hover, .group-item.highlighted { background: rgba(37,99,235,0.06) }
-.group-item-left { font-weight:600 }
-.group-item-right { color:var(--muted); font-size:0.92rem }
+.group-search-wrapper { position: relative; width:100%; /* allow flex sizing in row layouts */ flex: 1 1 auto; min-width: 0; max-width: none }
+.group-search { padding:10px 12px; width:100%; box-sizing: border-box }
+
+/* Dropdown — desktop: align to input width, nice shadow, scrollable */
+.group-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid rgba(226,234,247,0.9);
+  box-shadow: 0 8px 28px rgba(15,23,36,0.06), 0 2px 6px rgba(15,23,36,0.02) inset;
+  max-height: 320px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  z-index: 2000;
+  border-radius: 8px;
+  margin-top: 8px;
+  box-sizing: border-box;
+  min-width: 420px;
+  max-width: min(720px, calc(100vw - 160px));
+  transition: transform 180ms cubic-bezier(.2,.9,.2,1), opacity 160ms ease;
+  /* start slightly lifted and faded; become visible while input is focused */
+  transform: translateY(6px) scale(0.997);
+  opacity: 0;
+}
+
+/* When the input inside wrapper is focused, show the dropdown with subtle motion */
+.group-search-wrapper:focus-within .group-dropdown {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+}
+
+/* Two-column dropdown layout */
+.group-dropdown-inner { display: flex; gap: 12px; align-items: stretch }
+.group-list { width: 320px; max-height: 320px; overflow-y: auto; border-right: 1px solid var(--border); border-radius: 6px 0 0 6px; background: #fff }
+.group-list-item { display:flex; align-items:center; gap:12px; padding:12px 14px; cursor:pointer; min-height:48px; border-bottom: 1px solid rgba(230,238,247,0.9); position:relative; transition: transform 160ms ease, box-shadow 160ms ease, background 120ms ease }
+.group-list-item:hover { transform: scale(1.02); box-shadow: 0 8px 18px rgba(15,23,36,0.04); }
+.group-list-item.highlighted, .group-list-item:active { background: linear-gradient(90deg, rgba(102,126,234,0.06), rgba(102,126,234,0.03)); }
+
+/* Left accent bar for highlighted item */
+.group-list-item::before { content: ''; position: absolute; left: 10px; top: 12px; bottom: 12px; width: 0; border-radius: 6px; transition: width 160ms ease, background 160ms ease }
+.group-list-item.highlighted::before, .group-list-item:hover::before { width: 6px; background: linear-gradient(180deg, #4f46e5, #06b6d4); }
+.group-list-item .group-name { padding-left: 6px }
+.group-icon { font-size:18px }
+.group-name { font-weight:600; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.group-count { color:var(--muted); font-size:0.9rem; margin-left:8px }
+
+.group-details { flex:1; padding:14px; display:flex; flex-direction:column; gap:8px; justify-content:flex-start }
+.details-title { margin:0; font-size:1rem }
+.details-stats { display:flex; gap:12px; align-items:center }
+.details-stats .stat { font-size:0.95rem; color:var(--muted); display:flex; gap:6px; align-items:center }
+.dot { width:10px; height:10px; border-radius:50%; display:inline-block }
+.dot.up { background: #28a745 }
+.dot.down { background: #dc3545 }
+.details-desc { margin:0; color:var(--muted); font-size:0.95rem }
+.group-details .btn { align-self:flex-start; padding:8px 12px; border-radius:10px; background: #0f1724; color: white; border: none; box-shadow: 0 6px 18px rgba(15,23,36,0.08); transform-origin: center; transition: transform 160ms ease, box-shadow 160ms ease, opacity 120ms ease }
+.group-details .btn:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 10px 26px rgba(15,23,36,0.12); opacity: 0.98 }
+
+/* Small accessibility focus state for keyboard users */
+.group-list-item:focus { outline: 3px solid rgba(37,99,235,0.12); outline-offset: 2px }
+
+/* Make search input visually attached to dropdown when open */
+.group-search:focus {
+  outline: none;
+  box-shadow: 0 6px 24px rgba(37,99,235,0.06);
+}
+
+/* Rounded corners on top of dropdown to match input */
+.group-dropdown { border-top-left-radius: 8px; border-top-right-radius: 8px; }
+
+/* legacy single-column list styles removed (using two-column layout) */
+
+/* Nice thin custom scrollbar where supported */
+.group-dropdown::-webkit-scrollbar { width: 10px }
+.group-dropdown::-webkit-scrollbar-thumb { background: rgba(15,23,42,0.08); border-radius: 8px }
+.group-dropdown::-webkit-scrollbar-track { background: transparent }
+
+/* Mobile: make dropdown easier to use — full-width, higher and fixed if needed */
+@media (max-width: 600px) {
+  .group-search-wrapper { max-width: 100% }
+  .group-dropdown {
+    position: fixed;
+    left: 8px;
+    right: 8px;
+    bottom: 12px;
+    top: auto;
+    max-height: 60vh;
+    margin-top: 0;
+    border-radius: 12px;
+    box-shadow: 0 20px 50px rgba(10,20,40,0.18);
+  }
+
+  /* Mobile: stack into single column and show preview below the list */
+  .group-dropdown-inner { flex-direction: column; }
+  .group-list { width: 100%; max-height: 45vh; overflow-y: auto }
+  .group-list-item { padding: 14px 16px; font-size: 1rem }
+
+  /* Show group preview/details on mobile below the list */
+  .group-details { display: block; width: 100%; padding: 12px; border-top: 1px solid rgba(230,238,247,0.9); background: #fff; max-height: 30vh; overflow-y: auto; box-sizing: border-box }
+  .group-details .details-title { font-size:1rem }
+
+  /* Remove desktop min-width so the fixed mobile dropdown fits the viewport */
+  .group-dropdown { min-width: unset; max-width: calc(100% - 16px); padding-bottom: 8px; }
+
+  /* Allow selector to shrink on small screens instead of forcing 200px */
+  .group-selector { flex: 1 1 auto; min-width: 0; max-width: 100%; }
+
+  /* Ensure dropdown overlays other elements on mobile */
+  .group-search-wrapper { z-index: 2200 }
+}
 
 .channel-option { border:1px solid var(--border); border-radius:10px; padding:12px; background:transparent }
 .channel-header { display:flex; gap:8px; align-items:center }
@@ -1092,9 +1222,9 @@ select.form-control:focus { z-index: 80 }
   .form-control { padding:10px 10px }
   .btn { width:100%; display:inline-flex; align-items:center; justify-content:center; text-align:center }
   .form-actions { flex-direction:column-reverse }
-  /* keep actions visible on mobile when form is long */
+  /* keep actions visible on mobile when form is long
   .form-actions { position: sticky; bottom: 10px; left: 10px; right: 10px; padding:10px; background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,255,255,0.95)); border-radius:10px; gap:8px; z-index:60 }
-  .btn-success { min-width:140px }
+  .btn-success { min-width:140px } */
 }
 
 /* Manage Notification button and no-channels layout */

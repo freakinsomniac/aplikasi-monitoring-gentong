@@ -4,12 +4,84 @@
       <h1>Incidents</h1>
       
       <div class="header-actions">
-        <div class="filter-group">
-          <select v-model="statusFilter" class="form-control">
-            <option value="">All Statuses</option>
-            <option value="pending">Pending (Ditangani)</option>
-            <option value="resolved">Resolved (Selesai)</option>
-          </select>
+        <div class="action-buttons">
+          <div class="dropdown" :class="{ 'is-active': showFilters }" @click.stop>
+            <button class="action-btn" @click="toggleFilters">
+              <span class="icon">⚙</span>
+              <span>Filters</span>
+            </button>
+            <div v-if="showFilters" class="dropdown-menu" @click.stop>
+              <div class="dropdown-content">
+                <button 
+                  class="dropdown-item" 
+                  :class="{ 'is-active': statusFilter === '' }"
+                  @click="statusFilter = ''; showFilters = false"
+                >
+                  All Statuses (Open, Pending, Resolved)
+                </button>
+                <button 
+                  class="dropdown-item" 
+                  :class="{ 'is-active': statusFilter === 'open' }"
+                  @click="statusFilter = 'open'; showFilters = false"
+                >
+                  Open (Down)
+                </button>
+                <button 
+                  class="dropdown-item" 
+                  :class="{ 'is-active': statusFilter === 'pending' }"
+                  @click="statusFilter = 'pending'; showFilters = false"
+                >
+                  Pending (Ditangani)
+                </button>
+                <button 
+                  class="dropdown-item" 
+                  :class="{ 'is-active': statusFilter === 'resolved' }"
+                  @click="statusFilter = 'resolved'; showFilters = false"
+                >
+                  Resolved (Selesai)
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <div class="dropdown" :class="{ 'is-active': showSort }" @click.stop>
+            <button class="action-btn" @click="toggleSort">
+              <span class="icon">↕</span>
+              <span>Sort</span>
+            </button>
+            <div v-if="showSort" class="dropdown-menu" @click.stop>
+              <div class="dropdown-content">
+                <button 
+                  class="dropdown-item" 
+                  :class="{ 'is-active': sortBy === 'date-desc' }"
+                  @click="sortBy = 'date-desc'; showSort = false"
+                >
+                  Newest First
+                </button>
+                <button 
+                  class="dropdown-item" 
+                  :class="{ 'is-active': sortBy === 'date-asc' }"
+                  @click="sortBy = 'date-asc'; showSort = false"
+                >
+                  Oldest First
+                </button>
+                <button 
+                  class="dropdown-item" 
+                  :class="{ 'is-active': sortBy === 'status' }"
+                  @click="sortBy = 'status'; showSort = false"
+                >
+                  Sort by Status
+                </button>
+                <button 
+                  class="dropdown-item" 
+                  :class="{ 'is-active': sortBy === 'name' }"
+                  @click="sortBy = 'name'; showSort = false"
+                >
+                  Sort by Name
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
         
         <!-- <div class="filter-group">
@@ -102,22 +174,35 @@
                 <span class="status-badge" :class="`status-${incident.status || 'open'}`">{{ getStatusLabel(incident.status || 'open') }}</span>
               </div>
               <div class="col datetime">{{ formatDate(incident.started_at || incident.last_check_at || new Date()) }}</div>
-              <div class="col message">{{ getIncidentMessage(incident) }}</div>
+              <div class="col message" :title="getIncidentMessage(incident)">{{ getIncidentMessage(incident) }}</div>
               <div class="col actions">
+                <a 
+                  v-if="incident.monitor?.target" 
+                  :href="incident.monitor.target" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  class="btn btn-secondary btn-sm btn-view-link"
+                  title="View"
+                >
+                  <img src="https://img.icons8.com/?size=100&id=132&format=png&color=000000" alt="link" class="icon-link" />
+                </a>
+                
                 <button
-                  class="btn btn-warning btn-sm"
+                  class="btn btn-warning btn-sm btn-action"
+                  title="Ditangani"
                   :disabled="incident.status === 'pending' || incident.status === 'resolved'"
                   @click="openActionModal('pending', incident.id)"
                 >
-                  Ditangani
+                  <img src="https://img.icons8.com/?size=100&id=s4MzQ849Sdas&format=png&color=000000" alt="pending" class="icon-action" /> Ditangani
                 </button>
 
                 <button
-                  class="btn btn-success btn-sm"
+                  class="btn btn-success btn-sm btn-action"
+                  title="Selesai"
                   :disabled="incident.status === 'resolved'"
                   @click="openActionModal('resolved', incident.id)"
                 >
-                  Selesai
+                  <img src="https://img.icons8.com/?size=100&id=3sGpukxLxwGk&format=png&color=000000" alt="resolved" class="icon-action" /> Selesai
                 </button>
               </div>
             </div>
@@ -127,48 +212,49 @@
     </div>
 
     <!-- Pagination -->
-    <!-- Pagination -->
-    <div v-if="pagination.total > pagination.per_page" class="pagination">
-      <button
-        @click="previousPage"
-        :disabled="pagination.current_page === 1"
-        class="btn btn-secondary"
-      >
-        Previous
-      </button>
-
-      <div class="pagination-pages">
-        <button
-          v-for="p in pagesList"
-          :key="p"
-          class="btn btn-secondary btn-sm"
-          :class="{ 'active-page': p === pagination.current_page }"
-          @click="gotoPage(p)"
-        >
-          {{ p }}
-        </button>
+    <div v-if="!loading && filteredIncidents.length > 0" class="pagination-wrapper">
+      <div class="pagination-left">
+        <span class="pagination-showing">Showing {{ paginationStart }} to {{ paginationEnd }} of {{ pagination.total }} entries</span>
       </div>
-
-      <span class="pagination-info">
-        Page {{ pagination.current_page }} of {{ pagination.last_page }}
-        ({{ pagination.total }} total incidents)
-      </span>
       
-      <button
-        @click="nextPage"
-        :disabled="pagination.current_page === pagination.last_page"
-        class="btn btn-secondary"
-      >
-        Next
-      </button>
+      <div class="pagination-right">
+        <button
+          @click="previousPage"
+          :disabled="pagination.current_page === 1"
+          class="pagination-nav-btn"
+        >
+          Back
+        </button>
 
-      <div class="pagination-select">
-        <label>Per page:</label>
-        <select v-model.number="pagination.per_page" @change="changePerPage" class="form-control">
-          <option :value="10">10</option>
-          <option :value="20">20</option>
-          <option :value="50">50</option>
-        </select>
+        <div class="pagination-pages">
+          <button
+            v-for="p in visiblePages"
+            :key="p"
+            class="pagination-page-btn"
+            :class="{ 'active': p === pagination.current_page, 'dots': p === '...' }"
+            :disabled="p === '...'"
+            @click="gotoPage(p)"
+          >
+            {{ p }}
+          </button>
+        </div>
+        
+        <button
+          @click="nextPage"
+          :disabled="pagination.current_page >= pagination.last_page"
+          class="pagination-nav-btn"
+        >
+          Next
+        </button>
+
+        <div class="pagination-perpage">
+          <label>Per page:</label>
+          <select v-model.number="pagination.per_page" @change="changePerPage" class="perpage-select">
+            <option :value="10">10</option>
+            <option :value="20">20</option>
+            <option :value="50">50</option>
+          </select>
+        </div>
       </div>
     </div>
   </div>
@@ -186,6 +272,9 @@ const incidents = ref([])
 const availableMonitors = ref([])
 const statusFilter = ref('')
 const monitorFilter = ref('')
+const sortBy = ref('date-desc')
+const showFilters = ref(false)
+const showSort = ref(false)
 const newNotes = ref({})
 const serverError = ref(false)
 const viewMode = ref('list')
@@ -211,14 +300,86 @@ const pagesList = computed(() => {
   return arr
 })
 
+const paginationStart = computed(() => {
+  if (pagination.value.total === 0) return 0
+  return ((pagination.value.current_page - 1) * pagination.value.per_page) + 1
+})
+
+const paginationEnd = computed(() => {
+  const end = pagination.value.current_page * pagination.value.per_page
+  return Math.min(end, pagination.value.total)
+})
+
+const visiblePages = computed(() => {
+  const current = pagination.value.current_page
+  const last = pagination.value.last_page
+  const pages = []
+  
+  // Always show first page
+  pages.push(1)
+  
+  // Show pages around current page
+  for (let i = Math.max(2, current - 1); i <= Math.min(current + 1, last); i++) {
+    if (!pages.includes(i)) pages.push(i)
+  }
+  
+  // Add dots and last pages if needed
+  if (current + 2 < last) {
+    if (current + 2 < last - 1) {
+      pages.push('...')
+    }
+    if (!pages.includes(last - 1)) pages.push(last - 1)
+  }
+  
+  // Always show last page if > 1
+  if (last > 1 && !pages.includes(last)) {
+    pages.push(last)
+  }
+  
+  return pages
+})
+
 const filteredIncidents = computed(() => {
-  // Return incidents as-is since filtering is done server-side
-  return incidents.value
+  // Clone incidents array for sorting
+  let result = [...incidents.value]
+  
+  // Apply sorting
+  if (sortBy.value === 'date-desc') {
+    result.sort((a, b) => {
+      const dateA = new Date(a.started_at || a.last_check_at || 0)
+      const dateB = new Date(b.started_at || b.last_check_at || 0)
+      return dateB - dateA
+    })
+  } else if (sortBy.value === 'date-asc') {
+    result.sort((a, b) => {
+      const dateA = new Date(a.started_at || a.last_check_at || 0)
+      const dateB = new Date(b.started_at || b.last_check_at || 0)
+      return dateA - dateB
+    })
+  } else if (sortBy.value === 'status') {
+    const statusOrder = { 'open': 1, 'pending': 2, 'resolved': 3 }
+    result.sort((a, b) => {
+      const statusA = statusOrder[a.status || 'open'] || 0
+      const statusB = statusOrder[b.status || 'open'] || 0
+      return statusA - statusB
+    })
+  } else if (sortBy.value === 'name') {
+    result.sort((a, b) => {
+      const nameA = (a.monitor_name || '').toLowerCase()
+      const nameB = (b.monitor_name || '').toLowerCase()
+      return nameA.localeCompare(nameB)
+    })
+  }
+  
+  return result
 })
 
 onMounted(async () => {
   await fetchIncidents()
   await fetchMonitors()
+  
+  // Close dropdowns when clicking outside
+  document.addEventListener('click', closeAllDropdowns)
 })
 
 watch([statusFilter, monitorFilter], () => {
@@ -226,17 +387,36 @@ watch([statusFilter, monitorFilter], () => {
   fetchIncidents()
 })
 
+function closeAllDropdowns() {
+  showFilters.value = false
+  showSort.value = false
+}
+
+function toggleFilters() {
+  showSort.value = false
+  showFilters.value = !showFilters.value
+}
+
+function toggleSort() {
+  showFilters.value = false
+  showSort.value = !showSort.value
+}
+
 async function fetchIncidents() {
   loading.value = true
   
   try {
     const params = {
       page: pagination.value.current_page,
-      per_page: pagination.value.per_page
+      per_page: pagination.value.per_page,
+      // Fetch all statuses by default
+      include_all_statuses: true
     }
     
-    if (statusFilter.value) {
+    // Only filter by status if explicitly selected
+    if (statusFilter.value && statusFilter.value !== '') {
       params.status = statusFilter.value
+      delete params.include_all_statuses
     }
     
     if (monitorFilter.value) {
@@ -245,29 +425,56 @@ async function fetchIncidents() {
     
     const response = await api.incidents.getAll(params)
     
+    console.log('Full API Response:', response)
+    console.log('Response Data:', response.data)
+    
     if (response.data && response.data.success) {
-      const data = response.data.data
+      const responseData = response.data.data // Laravel pagination wraps in 'data'
       
-      // Handle both paginated and non-paginated responses
-      if (data.data) {
-        // Paginated response
-        incidents.value = data.data
-        if (data.meta) {
-          pagination.value = {
-            current_page: data.meta.current_page || 1,
-            last_page: data.meta.last_page || 1,
-            per_page: data.meta.per_page || 20,
-            total: data.meta.total || 0
-          }
+      console.log('Extracted Data:', responseData)
+      
+      // Handle Laravel paginated response structure
+      if (responseData && typeof responseData === 'object' && 'data' in responseData) {
+        // Laravel pagination format: { current_page, data: [...], total, ... }
+        incidents.value = responseData.data || []
+        
+        pagination.value = {
+          current_page: responseData.current_page || 1,
+          last_page: responseData.last_page || 1,
+          per_page: responseData.per_page || 10,
+          total: responseData.total || 0
         }
-      } else if (Array.isArray(data)) {
+        
+        console.log('Incidents loaded:', incidents.value.length)
+        console.log('Pagination:', pagination.value)
+      } else if (Array.isArray(responseData)) {
         // Direct array response
-        incidents.value = data
+        incidents.value = responseData
+        pagination.value = {
+          current_page: 1,
+          last_page: 1,
+          per_page: pagination.value.per_page,
+          total: responseData.length
+        }
+        console.log('Incidents loaded (array):', incidents.value.length)
       } else {
+        console.warn('Unexpected response structure:', response.data)
         incidents.value = []
+        pagination.value = {
+          current_page: 1,
+          last_page: 1,
+          per_page: pagination.value.per_page,
+          total: 0
+        }
       }
     } else {
       incidents.value = []
+      pagination.value = {
+        current_page: 1,
+        last_page: 1,
+        per_page: pagination.value.per_page,
+        total: 0
+      }
     }
   } catch (err) {
     console.error('Failed to load incidents:', err)
@@ -411,22 +618,32 @@ async function addNote(incidentId) {
 }
 
 function previousPage() {
-  if (pagination.value.current_page > 1) {
-    pagination.value.current_page--
+  const currentPage = pagination.value.current_page
+  if (currentPage > 1) {
+    pagination.value.current_page = currentPage - 1
+    console.log('Previous page:', pagination.value.current_page)
     fetchIncidents()
   }
 }
 
 function nextPage() {
-  if (pagination.value.current_page < pagination.value.last_page) {
-    pagination.value.current_page++
+  const currentPage = pagination.value.current_page
+  const lastPage = pagination.value.last_page
+  if (currentPage < lastPage) {
+    pagination.value.current_page = currentPage + 1
+    console.log('Next page:', pagination.value.current_page)
     fetchIncidents()
   }
 }
 
 function gotoPage(n) {
-  const page = Number(n) || 1
+  // Ignore if dots clicked
+  if (n === '...') return
+  
+  const page = Number(n)
+  if (isNaN(page) || page < 1) return
   if (page === pagination.value.current_page) return
+  
   pagination.value.current_page = page
   fetchIncidents()
 }
@@ -540,6 +757,114 @@ async function retryConnection() {
   flex-wrap: wrap;
 }
 
+.action-buttons {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.dropdown {
+  position: relative;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  background: #ffffff;
+  border: 1px solid #dfe6e9;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #2d3436;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.action-btn:hover {
+  background: #f8f9fa;
+  border-color: #b2bec3;
+}
+
+.dropdown.is-active .action-btn {
+  background: #f8f9fa;
+  border-color: #3498db;
+}
+
+.action-btn .icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 220px;
+  background: #ffffff;
+  border: 1px solid #dfe6e9;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  z-index: 100;
+  animation: dropdownFadeIn 0.15s ease;
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dropdown-content {
+  padding: 8px;
+}
+
+.dropdown-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #636e72;
+  margin-bottom: 6px;
+  padding: 0 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  text-align: left;
+  font-size: 14px;
+  color: #2d3436;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dropdown-item:hover {
+  background: #f1f3f5;
+}
+
+.dropdown-item.is-active {
+  background: #e3f2fd;
+  color: #2980b9;
+  font-weight: 600;
+}
+
+.dropdown-content .form-control {
+  margin-top: 4px;
+}
+
 .filter-group {
   min-width: 150px;
 }
@@ -587,21 +912,20 @@ async function retryConnection() {
   padding: 10px 16px;
   font-weight: 700;
   color: #445569;
-  border-bottom: 2px solid #edf2f4;
+  border-bottom: 2px solid #cbd5e0;
+  border-top: 2px solid #cbd5e0;
+  background: #f7fafc;
   align-items: center;
 }
 .list-header .col,
 .list-row .col {
   padding: 6px 10px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
-.list-header .name { flex: 2 1 260px; }
-.list-header .status { flex: 0 0 120px; text-align: center }
-.list-header .datetime { flex: 0 0 220px; text-align: left }
-.list-header .message { flex: 1 1 260px }
-.list-header .actions { flex: 0 0 280px; text-align: right }
+.list-header .name { flex: 2 1 260px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list-header .status { flex: 0 0 120px; text-align: center; white-space: nowrap; }
+.list-header .datetime { flex: 0 0 220px; text-align: left; white-space: nowrap; }
+.list-header .message { flex: 1 1 260px; white-space: nowrap; }
+.list-header .actions { flex: 0 0 360px; text-align: right; white-space: nowrap; }
 
 .list-row {
   display: flex;
@@ -609,10 +933,39 @@ async function retryConnection() {
   align-items: center;
   padding: 10px 16px;
 }
-.list-row .name { flex: 2 1 260px; }
-.list-row .status { flex: 0 0 120px; text-align: center }
-.list-row .datetime { flex: 0 0 220px; text-align: left; color: #6b7a86; font-size: 0.95em }
-.list-row .message { flex: 1 1 260px; color: #3b4a54 }
+.list-row .name { 
+  flex: 2 1 260px; 
+  white-space: nowrap; 
+  overflow: hidden; 
+  text-overflow: ellipsis;
+  align-self: center;
+}
+.list-row .status { 
+  flex: 0 0 120px; 
+  text-align: center; 
+  white-space: nowrap;
+  align-self: center;
+}
+.list-row .datetime { 
+  flex: 0 0 220px; 
+  text-align: left; 
+  color: #6b7a86; 
+  font-size: 0.95em; 
+  white-space: nowrap;
+  align-self: center;
+}
+.list-row .message { 
+  flex: 1 1 260px; 
+  color: #3b4a54;
+  word-wrap: break-word;
+  white-space: normal;
+  line-height: 1.5;
+  overflow-wrap: break-word;
+  align-self: center;
+}
+.list-row .message {
+  cursor: help;
+}
 .list-row .actions { 
   flex: 0 0 280px; 
   text-align: right; 
@@ -620,6 +973,7 @@ async function retryConnection() {
   gap: 12px; 
   justify-content: flex-end; 
   align-items: center;
+  align-self: center;
 }
 
 .list-row .actions .btn { margin-left: 0 }
@@ -1035,34 +1389,143 @@ async function retryConnection() {
   color: #7f8c8d;
 }
 
-.pagination {
+/* Pagination Styles */
+.pagination-wrapper {
   display: flex;
-  justify-content: center;
+  justify-content: space-between;
   align-items: center;
-  gap: 15px;
-  margin-top: 16px;
-  padding: 12px;
+  margin-top: 20px;
+  padding: 16px 0;
+  border-top: 1px solid #e8eaed;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 
-.pagination-info {
-  color: #7f8c8d;
-  font-size: 0.9em;
+.pagination-left {
+  display: flex;
+  align-items: center;
+}
+
+.pagination-showing {
+  font-size: 14px;
+  color: #636e72;
+}
+
+.pagination-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pagination-nav-btn {
+  padding: 6px 14px;
+  background: #ffffff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #555;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-weight: 400;
+}
+
+.pagination-nav-btn:hover:not(:disabled) {
+  background: #f5f5f5;
+  border-color: #aaa;
+}
+
+.pagination-nav-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: #f9f9f9;
+  color: #999;
 }
 
 .pagination-pages {
   display: flex;
-  gap: 6px;
+  gap: 4px;
   align-items: center;
 }
-.pagination-select {
+
+.pagination-page-btn {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 8px;
   display: flex;
-  gap: 8px;
   align-items: center;
-  margin-left: 12px;
+  justify-content: center;
+  background: #ffffff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #555;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
-.active-page {
-  background: #3498db;
+
+.pagination-page-btn:hover:not(.active) {
+  background: #f5f5f5;
+  border-color: #aaa;
+}
+
+.pagination-page-btn.active {
+  background: #007bff;
   color: white;
+  border-color: #007bff;
+  font-weight: 500;
+}
+
+.pagination-page-btn.dots {
+  cursor: default;
+  pointer-events: none;
+  border-color: transparent;
+  background: transparent;
+}
+
+.pagination-page-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.pagination-perpage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid #ddd;
+}
+
+.pagination-perpage label {
+  font-size: 14px;
+  color: #636e72;
+  font-weight: 400;
+}
+
+.perpage-select {
+  padding: 5px 28px 5px 8px;
+  background: #ffffff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  color: #555;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23555' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+
+.perpage-select:hover {
+  border-color: #aaa;
+  background-color: #f5f5f5;
+}
+
+.perpage-select:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.1);
 }
 
 .form-control {
@@ -1148,6 +1611,79 @@ async function retryConnection() {
   box-shadow: 0 2px 6px rgba(0,0,0,0.15);
 }
 
+/* View Link Button with Icon */
+.btn-view-link {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.btn-view-link .icon-link {
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  transition: all 0.3s ease;
+  filter: brightness(0) invert(1);
+}
+
+.btn-view-link:hover {
+  background: linear-gradient(135deg, #7f8c8d 0%, #636e72 100%);
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 4px 12px rgba(127, 140, 141, 0.4);
+}
+
+.btn-view-link:hover .icon-link {
+  transform: rotate(15deg) scale(1.1);
+}
+
+.btn-view-link:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Action Buttons with Icons */
+.btn-action {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.btn-action .icon-action {
+  width: 16px;
+  height: 16px;
+  margin-right: 4px;
+  transition: all 0.3s ease;
+  filter: brightness(0) invert(1);
+}
+
+.btn-warning.btn-action:hover:not(:disabled) {
+  background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 4px 12px rgba(230, 126, 34, 0.4);
+}
+
+.btn-success.btn-action:hover:not(:disabled) {
+  background: linear-gradient(135deg, #229954 0%, #1e8449 100%);
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 4px 12px rgba(39, 174, 96, 0.4);
+}
+
+.btn-action:hover:not(:disabled) .icon-action {
+  transform: rotate(15deg) scale(1.1);
+}
+
+.btn-action:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
+}
+
+.btn-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-action:disabled .icon-action {
+  opacity: 0.6;
+}
+
 /* Icon placeholders */
 .icon-alert::before { content: '⚠'; }
 .icon-check::before { content: '✓'; }
@@ -1208,6 +1744,34 @@ async function retryConnection() {
   .list-row .actions .btn-sm {
     min-width: 112px;
     padding: 8px 12px;
+  }
+  
+  .pagination-wrapper {
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 16px;
+  }
+  
+  .pagination-left {
+    order: 2;
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .pagination-right {
+    order: 1;
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  
+  .pagination-nav-btn {
+    flex: 0 0 auto;
+  }
+  
+  .pagination-pages {
+    flex: 1;
+    justify-content: center;
   }
   
   .page-header {
@@ -1275,13 +1839,41 @@ async function retryConnection() {
     width: 100%;
   }
   
-  .pagination {
-    flex-direction: column;
-    gap: 0.75rem;
+  .pagination-wrapper {
+    margin-top: 16px;
+    padding: 12px 0;
   }
   
-  .pagination .btn {
+  .pagination-container {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .pagination-btn {
     width: 100%;
+    justify-content: center;
+  }
+  
+  .pagination-pages {
+    order: -1;
+  }
+  
+  .pagination-info {
+    order: -2;
+    padding: 8px 12px;
+    background: #f8f9fa;
+    border-radius: 6px;
+    width: 100%;
+    justify-content: center;
+  }
+  
+  .pagination-perpage {
+    width: 100%;
+    justify-content: center;
+    padding-left: 0;
+    border-left: none;
+    border-top: 1px solid #e8eaed;
+    padding-top: 12px;
   }
 }
 

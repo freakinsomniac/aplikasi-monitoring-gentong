@@ -334,6 +334,12 @@ onUnmounted(() => {
   padding: 20px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   margin-top: auto;
+  /* Keep logout area visible: stick to bottom of the navbar scroll area and respect safe-area */
+  position: sticky;
+  bottom: 0;
+  z-index: 1001;
+  background: linear-gradient(180deg, rgba(255,255,255,0.00), rgba(0,0,0,0.02));
+  padding-bottom: calc(env(safe-area-inset-bottom, 12px) + 12px);
 }
 
 .user-info {

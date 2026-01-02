@@ -3,8 +3,8 @@
     <div class="page-header">
       <div class="header-content">
         <div class="header-main">
-          <h1>🖥️ Monitors Dashboard</h1>
-          <p>Monitor your services in real-time with advanced analytics</p>
+          <h1>Monitors Dashboard</h1>
+          <!-- <p>Monitor your services in real-time with advanced analytics</p> -->
         </div>
         <div class="header-actions">
           <button @click="manualRefresh" class="btn btn-secondary">
@@ -98,9 +98,7 @@
           >
         <option value="">All Groups</option>
         <option value="ungrouped">Ungrouped</option>
-        <option v-for="group in groups" :key="group.id" :value="group.name">
-          {{ group.name }}
-        </option>
+        <!-- only show All Groups and Ungrouped as requested -->
           </select>
           
         </div>
@@ -860,7 +858,29 @@ async function fetchData() {
 async function fetchGroups() {
   try {
     const response = await monitorStore.getGroups()
-    groups.value = response.data || []
+    // support both shapes: store returns { success, data } and API wrapper may return { data }
+    let data = response?.data ?? response?.data?.data ?? response?.data
+    if (response && response.success && response.data) data = response.data
+
+    if (!Array.isArray(data)) data = []
+
+    // Clean up groups: remove falsy/empty names, exclude any literal "All Groups",
+    // and deduplicate by lower-cased name.
+    const seen = new Set()
+    const cleaned = []
+    data.forEach(g => {
+      const name = (g && (g.name || g.group_name)) ? (g.name || g.group_name) : null
+      if (!name) return
+      const trimmed = String(name).trim()
+      if (!trimmed) return
+      const key = trimmed.toLowerCase()
+      if (key === 'all groups') return
+      if (seen.has(key)) return
+      seen.add(key)
+      cleaned.push({ id: g.id ?? trimmed, name: trimmed })
+    })
+
+    groups.value = cleaned
   } catch (error) {
     console.error('Failed to fetch groups:', error)
   }
@@ -1216,27 +1236,35 @@ onUnmounted(() => {
 /* Stats Cards */
 .stats-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 16px;
+  /* fixed-ish card width and centered layout */
+  grid-template-columns: repeat(auto-fit, minmax(140px, 160px));
+  gap: 14px;
   margin-bottom: 24px;
+  justify-content: center;
+  justify-items: center;
 }
 
 .stat-card {
   background: #ffffff;
   color: #111827;
   border-radius: 12px;
-  padding: 24px 20px;
+  padding: 14px 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
   border: 1px solid #e6e6e6;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 16px;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 160px;
   transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.15s ease, color 0.15s ease;
   animation: fadeInUp 0.5s ease forwards;
   opacity: 0;
   transform: translateY(20px);
   position: relative;
-  overflow: hidden;
+  overflow: visible;
+  box-sizing: border-box;
 }
 
 .stat-card:hover {
@@ -1256,21 +1284,22 @@ onUnmounted(() => {
 }
 
 .stat-icon {
-  font-size: 2.2em;
+  font-size: 1.6em;
   line-height: 1;
-  width: 56px;
-  height: 56px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
+  border-radius: 10px;
   background: rgba(0, 0, 0, 0.03);
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .stat-content h3 {
   margin: 0;
-  font-size: 1.75em;
+  font-size: 1.4em;
   font-weight: 700;
   color: #111827;
   line-height: 1.2;
@@ -1287,6 +1316,7 @@ onUnmounted(() => {
   margin: 5px 0 0 0;
   color: #7f8c8d;
   font-weight: 500;
+  font-size: 0.85rem;
 }
 
 /* Center the number and label inside stat cards */
@@ -1297,6 +1327,59 @@ onUnmounted(() => {
   justify-content: center;
   text-align: center;
   flex: 1 1 auto;
+}
+
+/* Mobile: make stat-cards more square by stacking icon above text */
+@media (max-width: 640px) {
+  .stats-cards {
+    /* Use two columns on narrow devices to avoid very narrow cards */
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+    gap: 12px;
+    grid-auto-rows: 1fr; /* make rows equal height */
+    align-items: stretch;
+    justify-items: center;
+  }
+
+  .stat-card {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 8px;
+    gap: 8px;
+    /* Let grid control height for consistent rows */
+    height: 100%;
+    max-width: 140px;
+    box-sizing: border-box;
+  }
+
+  .stat-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    font-size: 1.0em;
+    margin-bottom: 6px;
+    box-sizing: border-box;
+  }
+
+  .stat-content {
+    align-items: center;
+    justify-content: center;
+  }
+
+  .stat-content h3 {
+    font-size: 1.05em;
+    margin: 0 0 4px 0;
+    line-height: 1.05;
+    word-break: keep-all;
+  }
+
+  .stat-content p {
+    font-size: 0.72rem; /* slightly smaller label on mobile */
+    margin: 0;
+    line-height: 1.05;
+    text-align: center;
+    word-break: break-word;
+  }
 }
 
 .stat-card.services {
